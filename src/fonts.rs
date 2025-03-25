@@ -4,11 +4,11 @@ use std::ptr;
 
 #[repr(C)]
 struct FcPattern {
-    _data: [u8; 0]
+    _data: [u8; 0],
 }
 #[repr(C)]
 struct FcConfig {
-    _data: [u8; 0]
+    _data: [u8; 0],
 }
 
 type FcResult = c_int;
@@ -22,33 +22,25 @@ type FcMatchKind = c_int;
 const FcMatchPattern: FcMatchKind = 0;
 
 pub enum FontConfigError {
-    FontNotFound
+    FontNotFound,
 }
 
 pub struct FontConfig {
-    config: *const FcConfig
+    config: *const FcConfig,
 }
 
 impl FontConfig {
     pub fn new() -> FontConfig {
-        let config = unsafe {
-            FcInitLoadConfigAndFonts()
-        };
-        FontConfig {
-            config
-        }
+        let config = unsafe { FcInitLoadConfigAndFonts() };
+        FontConfig { config }
     }
     pub fn match_pattern(&self, pattern: &Pattern) -> Result<Pattern, FontConfigError> {
         let mut result: FcResult = 0;
-        let match_ = unsafe {
-            FcFontMatch(self.config, pattern.pattern, &mut result)
-        };
+        let match_ = unsafe { FcFontMatch(self.config, pattern.pattern, &mut result) };
         if match_ == ptr::null_mut() {
             return Err(FontConfigError::FontNotFound);
         }
-        Ok(Pattern {
-            pattern: match_
-        })
+        Ok(Pattern { pattern: match_ })
     }
     pub fn perform_substitutions(&self, pattern: &mut Pattern) {
         unsafe {
@@ -62,27 +54,25 @@ impl FontConfig {
 
 impl Drop for FontConfig {
     fn drop(&mut self) {
-        unsafe {
-            FcConfigDestroy(self.config)
-        }
+        unsafe { FcConfigDestroy(self.config) }
     }
 }
 
 fn throw_on_fcpattern_result(res: FcResult) {
     match res {
-        FcResultMatch => {},
+        FcResultMatch => {}
         FcResultNoMatch => {
             panic!("NULL pattern");
-        },
+        }
         FcResultTypeMismatch => {
             panic!("Wrong type for pattern element");
-        },
+        }
         FcResultNoId => {
             panic!("Unknown pattern element");
-        },
+        }
         FcResultOutOfMemory => {
             panic!("Out of memory");
-        },
+        }
         r => {
             panic!("Unknown fontconfig return value {:?}", r)
         }
@@ -90,18 +80,14 @@ fn throw_on_fcpattern_result(res: FcResult) {
 }
 
 pub struct Pattern {
-    pattern: *const FcPattern
+    pattern: *const FcPattern,
 }
 
 impl Pattern {
     pub fn new(st: &str) -> Pattern {
         let cstr = CString::new(st).unwrap();
-        let pattern = unsafe {
-            FcNameParse(cstr.as_ptr())
-        };
-        Pattern {
-            pattern
-        }
+        let pattern = unsafe { FcNameParse(cstr.as_ptr()) };
+        Pattern { pattern }
     }
     pub fn get_file_name(&self) -> &str {
         let name = CString::new("file").unwrap();
@@ -125,9 +111,7 @@ impl Pattern {
 
 impl Drop for Pattern {
     fn drop(&mut self) {
-        unsafe {
-            FcPatternDestroy(self.pattern)
-        }
+        unsafe { FcPatternDestroy(self.pattern) }
     }
 }
 
@@ -137,8 +121,18 @@ extern "C" {
     fn FcNameParse(_: *const c_char) -> *const FcPattern;
     fn FcPatternDestroy(_: *const FcPattern) -> ();
     fn FcFontMatch(_: *const FcConfig, _: *const FcPattern, _: *mut FcResult) -> *mut FcPattern;
-    fn FcPatternGetString(_: *const FcPattern, _: *const c_char, _: c_int, _: *mut *const c_char) -> FcResult;
-    fn FcPatternGetInteger(_: *const FcPattern, _: *const c_char, _: c_int, _: *mut c_int) -> FcResult;
+    fn FcPatternGetString(
+        _: *const FcPattern,
+        _: *const c_char,
+        _: c_int,
+        _: *mut *const c_char,
+    ) -> FcResult;
+    fn FcPatternGetInteger(
+        _: *const FcPattern,
+        _: *const c_char,
+        _: c_int,
+        _: *mut c_int,
+    ) -> FcResult;
     fn FcConfigSubstitute(_: *const FcConfig, _: *const FcPattern, _: FcMatchKind) -> c_int;
     fn FcDefaultSubstitute(_: *const FcPattern);
 }

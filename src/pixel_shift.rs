@@ -1,8 +1,6 @@
-use rand::Rng;
-use std::{
-    time::Instant,
-};
 use crate::TIMEOUT_MS;
+use rand::Rng;
+use std::time::Instant;
 
 const INTERVAL_MS: i32 = TIMEOUT_MS * 1; // should be a multiple of TIMEOUT_MS
 const PROLONGED_INTERVAL_MS: i32 = TIMEOUT_MS * 5; // should be a multiple of TIMEOUT_MS and more than INTERVAL_MS
@@ -15,15 +13,15 @@ const ANIMATION_DURATION_MS: i32 = 4000; // should be a multiple of ANIMATION_IN
 // size of the largest continuous colored line in the x-direction. The higher this value, the less
 // strain is put on the panel.
 pub const PIXEL_SHIFT_WIDTH_PX: u64 = 22; // should be divisible by 2
-// in y direction we can't really shift by a lot since icons still need to appear centered,
-// 2 pixels in each direction seems to be the maximum before it gets really visible.
+                                          // in y direction we can't really shift by a lot since icons still need to appear centered,
+                                          // 2 pixels in each direction seems to be the maximum before it gets really visible.
 const PIXEL_SHIFT_HEIGHT_PX: u64 = 4; // should be divisible by 2
 
 #[derive(Clone, Copy)]
 enum ShiftState {
     WaitingAtEnd,
     ShiftingSubpixel,
-    Normal
+    Normal,
 }
 
 pub struct PixelShiftManager {
@@ -32,7 +30,7 @@ pub struct PixelShiftManager {
     pixel_progress: u64,
     subpixel_progress: f64,
     direction: i64,
-    state: ShiftState
+    state: ShiftState,
 }
 
 fn wait_for_state(state: ShiftState) -> i32 {
@@ -73,7 +71,7 @@ impl PixelShiftManager {
         match self.state {
             ShiftState::Normal => {
                 self.state = ShiftState::ShiftingSubpixel;
-            },
+            }
             ShiftState::ShiftingSubpixel => {
                 let shift_by = ANIMATION_INTERVAL_MS as f64 / ANIMATION_DURATION_MS as f64;
                 self.subpixel_progress += shift_by * self.direction as f64;
@@ -86,7 +84,7 @@ impl PixelShiftManager {
                         self.direction = -self.direction;
                     }
                 }
-            },
+            }
             ShiftState::WaitingAtEnd => {
                 self.state = ShiftState::Normal;
                 self.subpixel_progress = 0.0;
@@ -101,6 +99,9 @@ impl PixelShiftManager {
         if y_progress > PIXEL_SHIFT_HEIGHT_PX as f64 {
             y_progress = (PIXEL_SHIFT_HEIGHT_PX * 2) as f64 - y_progress;
         }
-        (x_progress - (PIXEL_SHIFT_WIDTH_PX / 2) as f64, y_progress - (PIXEL_SHIFT_HEIGHT_PX / 2) as f64)
+        (
+            x_progress - (PIXEL_SHIFT_WIDTH_PX / 2) as f64,
+            y_progress - (PIXEL_SHIFT_HEIGHT_PX / 2) as f64,
+        )
     }
 }

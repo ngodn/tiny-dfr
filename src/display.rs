@@ -1,16 +1,19 @@
+use anyhow::{anyhow, Result};
+use drm::{
+    buffer::DrmFourcc,
+    control::{
+        atomic, connector,
+        dumbbuffer::{DumbBuffer, DumbMapping},
+        framebuffer, property, AtomicCommitFlags, ClipRect, Device as ControlDevice, Mode,
+        ResourceHandle,
+    },
+    ClientCapability, Device as DrmDevice,
+};
 use std::{
-    fs::{File, OpenOptions, self},
+    fs::{self, File, OpenOptions},
     os::unix::io::{AsFd, BorrowedFd},
     path::Path,
 };
-use drm::{
-    ClientCapability, Device as DrmDevice, buffer::DrmFourcc,
-    control::{
-        connector, Device as ControlDevice, property, ResourceHandle, atomic, AtomicCommitFlags,
-        dumbbuffer::{DumbBuffer, DumbMapping}, framebuffer, ClipRect, Mode
-    }
-};
-use anyhow::{Result, anyhow};
 
 struct Card(File);
 impl AsFd for Card {
@@ -36,7 +39,7 @@ pub struct DrmBackend {
     card: Card,
     mode: Mode,
     db: DumbBuffer,
-    fb: framebuffer::Handle
+    fb: framebuffer::Handle,
 }
 
 impl Drop for DrmBackend {
@@ -45,7 +48,6 @@ impl Drop for DrmBackend {
         self.card.destroy_dumb_buffer(self.db).unwrap();
     }
 }
-
 
 fn find_prop_id<T: ResourceHandle>(
     card: &Card,
@@ -67,7 +69,6 @@ fn try_open_card(path: &Path) -> Result<DrmBackend> {
     card.set_client_capability(ClientCapability::UniversalPlanes, true)?;
     card.set_client_capability(ClientCapability::Atomic, true)?;
     card.acquire_master_lock()?;
-
 
     let res = card.resource_handles()?;
     let coninfo = res
@@ -96,7 +97,10 @@ fn try_open_card(path: &Path) -> Result<DrmBackend> {
     let db = card.create_dumb_buffer((64, disp_height.into()), fmt, 32)?;
 
     let fb = card.add_framebuffer(&db, 24, 32)?;
-    let plane = *card.plane_handles()?.get(0).ok_or(anyhow!("No planes found"))?;
+    let plane = *card
+        .plane_handles()?
+        .get(0)
+        .ok_or(anyhow!("No planes found"))?;
 
     let mut atomic_req = atomic::AtomicModeReq::new();
     atomic_req.add_property(
@@ -169,7 +173,6 @@ fn try_open_card(path: &Path) -> Result<DrmBackend> {
 
     card.atomic_commit(AtomicCommitFlags::ALLOW_MODESET, atomic_req)?;
 
-
     Ok(DrmBackend { card, mode, db, fb })
 }
 
@@ -179,16 +182,21 @@ impl DrmBackend {
         for entry in fs::read_dir("/dev/dri/")? {
             let entry = entry?;
             if !entry.file_name().to_string_lossy().starts_with("card") {
-                continue
+                continue;
             }
             match try_open_card(&entry.path()) {
                 Ok(card) => return Ok(card),
-                Err(err) => {
-                    errors.push(format!("{}: {}", entry.path().as_os_str().to_string_lossy(), err.to_string()))
-                }
+                Err(err) => errors.push(format!(
+                    "{}: {}",
+                    entry.path().as_os_str().to_string_lossy(),
+                    err.to_string()
+                )),
             }
         }
-        Err(anyhow!("No touchbar device found, attempted: [\n    {}\n]", errors.join(",\n    ")))
+        Err(anyhow!(
+            "No touchbar device found, attempted: [\n    {}\n]",
+            errors.join(",\n    ")
+        ))
     }
     pub fn mode(&self) -> Mode {
         self.mode

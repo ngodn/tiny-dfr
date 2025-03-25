@@ -1,18 +1,15 @@
-use std::{
-    fs::read_to_string,
-    os::fd::AsFd
-};
+use crate::fonts::{FontConfig, Pattern};
+use crate::FunctionLayer;
 use anyhow::Error;
 use cairo::FontFace;
-use crate::FunctionLayer;
-use crate::fonts::{FontConfig, Pattern};
 use freetype::Library as FtLibrary;
 use input_linux::Key;
 use nix::{
     errno::Errno,
-    sys::inotify::{AddWatchFlags, InitFlags, Inotify, WatchDescriptor}
+    sys::inotify::{AddWatchFlags, InitFlags, Inotify, WatchDescriptor},
 };
 use serde::Deserialize;
+use std::{fs::read_to_string, os::fd::AsFd};
 
 const USER_CFG_PATH: &'static str = "/etc/tiny-dfr/config.toml";
 
@@ -34,7 +31,7 @@ struct ConfigProxy {
     adaptive_brightness: Option<bool>,
     active_brightness: Option<u32>,
     primary_layer_keys: Option<Vec<ButtonConfig>>,
-    media_layer_keys: Option<Vec<ButtonConfig>>
+    media_layer_keys: Option<Vec<ButtonConfig>>,
 }
 
 #[derive(Deserialize)]
@@ -64,8 +61,11 @@ fn load_font(name: &str) -> FontFace {
 }
 
 fn load_config(width: u16) -> (Config, [FunctionLayer; 2]) {
-    let mut base = toml::from_str::<ConfigProxy>(&read_to_string("/usr/share/tiny-dfr/config.toml").unwrap()).unwrap();
-    let user = read_to_string(USER_CFG_PATH).map_err::<Error, _>(|e| e.into())
+    let mut base =
+        toml::from_str::<ConfigProxy>(&read_to_string("/usr/share/tiny-dfr/config.toml").unwrap())
+            .unwrap();
+    let user = read_to_string(USER_CFG_PATH)
+        .map_err::<Error, _>(|e| e.into())
         .and_then(|r| Ok(toml::from_str::<ConfigProxy>(&r)?));
     if let Ok(user) = user {
         base.media_layer_default = user.media_layer_default.or(base.media_layer_default);
@@ -81,25 +81,38 @@ fn load_config(width: u16) -> (Config, [FunctionLayer; 2]) {
     let mut primary_layer_keys = base.primary_layer_keys.unwrap();
     if width >= 2170 {
         for layer in [&mut media_layer_keys, &mut primary_layer_keys] {
-            layer.insert(0, ButtonConfig { icon: None, text: Some("esc".into()), theme: None, action: Key::Esc, stretch: None });
+            layer.insert(
+                0,
+                ButtonConfig {
+                    icon: None,
+                    text: Some("esc".into()),
+                    theme: None,
+                    action: Key::Esc,
+                    stretch: None,
+                },
+            );
         }
     }
     let media_layer = FunctionLayer::with_config(media_layer_keys);
     let fkey_layer = FunctionLayer::with_config(primary_layer_keys);
-    let layers = if base.media_layer_default.unwrap(){ [media_layer, fkey_layer] } else { [fkey_layer, media_layer] };
+    let layers = if base.media_layer_default.unwrap() {
+        [media_layer, fkey_layer]
+    } else {
+        [fkey_layer, media_layer]
+    };
     let cfg = Config {
         show_button_outlines: base.show_button_outlines.unwrap(),
         enable_pixel_shift: base.enable_pixel_shift.unwrap(),
         adaptive_brightness: base.adaptive_brightness.unwrap(),
         font_face: load_font(&base.font_template.unwrap()),
-        active_brightness: base.active_brightness.unwrap()
+        active_brightness: base.active_brightness.unwrap(),
     };
     (cfg, layers)
 }
 
 pub struct ConfigManager {
     inotify_fd: Inotify,
-    watch_desc: Option<WatchDescriptor>
+    watch_desc: Option<WatchDescriptor>,
 }
 
 fn arm_inotify(inotify_fd: &Inotify) -> Option<WatchDescriptor> {
@@ -107,7 +120,7 @@ fn arm_inotify(inotify_fd: &Inotify) -> Option<WatchDescriptor> {
     match inotify_fd.add_watch(USER_CFG_PATH, flags) {
         Ok(wd) => Some(wd),
         Err(Errno::ENOENT) => None,
-        e => Some(e.unwrap())
+        e => Some(e.unwrap()),
     }
 }
 
@@ -116,13 +129,19 @@ impl ConfigManager {
         let inotify_fd = Inotify::init(InitFlags::IN_NONBLOCK).unwrap();
         let watch_desc = arm_inotify(&inotify_fd);
         ConfigManager {
-            inotify_fd, watch_desc
+            inotify_fd,
+            watch_desc,
         }
     }
     pub fn load_config(&self, width: u16) -> (Config, [FunctionLayer; 2]) {
         load_config(width)
     }
-    pub fn update_config(&mut self, cfg: &mut Config, layers: &mut [FunctionLayer; 2], width: u16) -> bool {
+    pub fn update_config(
+        &mut self,
+        cfg: &mut Config,
+        layers: &mut [FunctionLayer; 2],
+        width: u16,
+    ) -> bool {
         if self.watch_desc.is_none() {
             self.watch_desc = arm_inotify(&self.inotify_fd);
             return false;
@@ -135,7 +154,7 @@ impl ConfigManager {
         let mut ret = false;
         for evt in evts {
             if evt.wd != self.watch_desc.unwrap() {
-                continue
+                continue;
             }
             let parts = load_config(width);
             *cfg = parts.0;
