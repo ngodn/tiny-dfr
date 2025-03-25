@@ -87,7 +87,7 @@ fn try_load_png(path: impl AsRef<Path>) -> Result<ButtonImage> {
     c.set_source_surface(surf, 0.0, 0.0).unwrap();
     c.set_antialias(Antialias::Best);
     c.paint().unwrap();
-    return Ok(ButtonImage::Bitmap(resized));
+    Ok(ButtonImage::Bitmap(resized))
 }
 
 fn try_load_image(name: impl AsRef<str>, theme: Option<impl AsRef<str>>) -> Result<ButtonImage> {
@@ -270,7 +270,7 @@ impl FunctionLayer {
         pixel_shift: (f64, f64),
         complete_redraw: bool,
     ) -> Vec<ClipRect> {
-        let c = Context::new(&surface).unwrap();
+        let c = Context::new(surface).unwrap();
         let mut modified_regions = if complete_redraw {
             vec![ClipRect::new(0, 0, height as u16, width as u16)]
         } else {
@@ -465,9 +465,9 @@ where
 {
     uinput
         .write(&[input_event {
-            value: value,
+            value,
             type_: ty as u16,
-            code: code,
+            code,
             time: timeval {
                 tv_sec: 0,
                 tv_usec: 0,
@@ -509,8 +509,7 @@ fn main() {
         }
     }
     drop(map);
-    drm.dirty(&[ClipRect::new(0, 0, height as u16, width as u16)])
-        .unwrap();
+    drm.dirty(&[ClipRect::new(0, 0, height, width)]).unwrap();
     let mut sigset = SigSet::empty();
     sigset.add(Signal::SIGTERM);
     sigset.wait().unwrap();

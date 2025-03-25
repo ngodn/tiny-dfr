@@ -2,7 +2,7 @@ use crate::TIMEOUT_MS;
 use rand::Rng;
 use std::time::Instant;
 
-const INTERVAL_MS: i32 = TIMEOUT_MS * 1; // should be a multiple of TIMEOUT_MS
+const INTERVAL_MS: i32 = TIMEOUT_MS; // should be a multiple of TIMEOUT_MS
 const PROLONGED_INTERVAL_MS: i32 = TIMEOUT_MS * 5; // should be a multiple of TIMEOUT_MS and more than INTERVAL_MS
 const ANIMATION_INTERVAL_MS: i32 = 200; // should be less than TIMEOUT_MS
 const ANIMATION_DURATION_MS: i32 = 4000; // should be a multiple of ANIMATION_INTERVAL_MS

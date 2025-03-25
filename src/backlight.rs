@@ -21,10 +21,10 @@ const DIMMED_BRIGHTNESS: u32 = 1;
 
 fn read_attr(path: &Path, attr: &str) -> u32 {
     fs::read_to_string(path.join(attr))
-        .expect(&format!("Failed to read {attr}"))
+        .unwrap_or_else(|_| panic!("Failed to read {attr}"))
         .trim()
         .parse::<u32>()
-        .expect(&format!("Failed to parse {attr}"))
+        .unwrap_or_else(|_| panic!("Failed to parse {attr}"))
 }
 
 fn find_backlight() -> Result<PathBuf> {
@@ -62,7 +62,7 @@ fn find_display_backlight() -> Result<PathBuf> {
 }
 
 fn set_backlight(mut file: &File, value: u32) {
-    file.write(format!("{}\n", value).as_bytes()).unwrap();
+    file.write_all(format!("{}\n", value).as_bytes()).unwrap();
 }
 
 pub struct BacklightManager {
@@ -102,16 +102,15 @@ impl BacklightManager {
             Event::Keyboard(_) | Event::Pointer(_) | Event::Gesture(_) | Event::Touch(_) => {
                 self.last_active = Instant::now();
             }
-            Event::Switch(SwitchEvent::Toggle(toggle)) => match toggle.switch() {
-                Some(Switch::Lid) => {
+            Event::Switch(SwitchEvent::Toggle(toggle)) => {
+                if let Some(Switch::Lid) = toggle.switch() {
                     self.lid_state = toggle.switch_state();
                     println!("Lid Switch event: {:?}", self.lid_state);
                     if toggle.switch_state() == SwitchState::Off {
                         self.last_active = Instant::now();
                     }
                 }
-                _ => {}
-            },
+            }
             _ => {}
         }
     }

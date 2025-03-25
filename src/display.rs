@@ -61,7 +61,7 @@ fn find_prop_id<T: ResourceHandle>(
             return Ok(*id);
         }
     }
-    return Err(anyhow!("Property not found"));
+    Err(anyhow!("Property not found"))
 }
 
 fn try_open_card(path: &Path) -> Result<DrmBackend> {
@@ -87,19 +87,19 @@ fn try_open_card(path: &Path) -> Result<DrmBackend> {
         .find(|&i| i.state() == connector::State::Connected)
         .ok_or(anyhow!("No connected connectors found"))?;
 
-    let &mode = con.modes().get(0).ok_or(anyhow!("No modes found"))?;
+    let &mode = con.modes().first().ok_or(anyhow!("No modes found"))?;
     let (disp_width, disp_height) = mode.size();
     if disp_height / disp_width < 30 {
         return Err(anyhow!("This does not look like a touchbar"));
     }
-    let crtc = crtcinfo.get(0).ok_or(anyhow!("No crtcs found"))?;
+    let crtc = crtcinfo.first().ok_or(anyhow!("No crtcs found"))?;
     let fmt = DrmFourcc::Xrgb8888;
     let db = card.create_dumb_buffer((64, disp_height.into()), fmt, 32)?;
 
     let fb = card.add_framebuffer(&db, 24, 32)?;
     let plane = *card
         .plane_handles()?
-        .get(0)
+        .first()
         .ok_or(anyhow!("No planes found"))?;
 
     let mut atomic_req = atomic::AtomicModeReq::new();
@@ -189,7 +189,7 @@ impl DrmBackend {
                 Err(err) => errors.push(format!(
                     "{}: {}",
                     entry.path().as_os_str().to_string_lossy(),
-                    err.to_string()
+                    err
                 )),
             }
         }

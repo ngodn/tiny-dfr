@@ -11,7 +11,7 @@ use nix::{
 use serde::Deserialize;
 use std::{fs::read_to_string, os::fd::AsFd};
 
-const USER_CFG_PATH: &'static str = "/etc/tiny-dfr/config.toml";
+const USER_CFG_PATH: &str = "/etc/tiny-dfr/config.toml";
 
 pub struct Config {
     pub show_button_outlines: bool,

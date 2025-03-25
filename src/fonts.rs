@@ -37,7 +37,7 @@ impl FontConfig {
     pub fn match_pattern(&self, pattern: &Pattern) -> Result<Pattern, FontConfigError> {
         let mut result: FcResult = 0;
         let match_ = unsafe { FcFontMatch(self.config, pattern.pattern, &mut result) };
-        if match_ == ptr::null_mut() {
+        if match_.is_null() {
             return Err(FontConfigError::FontNotFound);
         }
         Ok(Pattern { pattern: match_ })
@@ -117,9 +117,9 @@ impl Drop for Pattern {
 
 extern "C" {
     fn FcInitLoadConfigAndFonts() -> *const FcConfig;
-    fn FcConfigDestroy(_: *const FcConfig) -> ();
+    fn FcConfigDestroy(_: *const FcConfig);
     fn FcNameParse(_: *const c_char) -> *const FcPattern;
-    fn FcPatternDestroy(_: *const FcPattern) -> ();
+    fn FcPatternDestroy(_: *const FcPattern);
     fn FcFontMatch(_: *const FcConfig, _: *const FcPattern, _: *mut FcResult) -> *mut FcPattern;
     fn FcPatternGetString(
         _: *const FcPattern,
