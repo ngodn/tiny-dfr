@@ -3,7 +3,7 @@ The most basic dynamic function row daemon possible
 
 
 ## Dependencies
-cairo, libinput, freetype, fontconfig, uinput enabled in kernel config
+cairo, libinput, freetype, fontconfig, librsvg 2.59 or later, uinput enabled in kernel config
 
 ## License
 
