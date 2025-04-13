@@ -33,7 +33,7 @@ fn find_backlight() -> Result<PathBuf> {
         let file_name = entry.file_name();
         let name = file_name.to_string_lossy();
 
-        if ["display-pipe", "appletb_backlight"]
+        if ["display-pipe", "228600000.dsi.0", "appletb_backlight"]
             .iter()
             .any(|s| name.contains(s))
         {
