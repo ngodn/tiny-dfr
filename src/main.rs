@@ -228,36 +228,44 @@ impl Button {
                 c.fill().unwrap();
             }
             ButtonImage::Time(format, locale) => {
-                 let current_time = Local::now();
-                 let current_locale = Locale::try_from(locale.as_str()).unwrap_or(Locale::POSIX);
-                 let formatted_time;
-                 if format == "24hr" {
-                     formatted_time = format!(
-                     "{}:{}    {} {} {}",
-                      current_time.format_localized("%H", current_locale),
-                      current_time.format_localized("%M", current_locale),
-                      current_time.format_localized("%a", current_locale),
-                      current_time.format_localized("%-e", current_locale),
-                      current_time.format_localized("%b", current_locale)
-                 );
-                 } else {
-                     formatted_time = format!(
-                     "{}:{} {}    {} {} {}",
-                     current_time.format_localized("%-l", current_locale),
-                     current_time.format_localized("%M", current_locale),
-                     current_time.format_localized("%p", current_locale),
-                     current_time.format_localized("%a", current_locale),
-                     current_time.format_localized("%-e", current_locale),
-                     current_time.format_localized("%b", current_locale)
-                 );
-                 }
-                 let time_extents = c.text_extents(&formatted_time).unwrap();
-                 c.move_to(
-                     button_left_edge + (button_width as f64 / 2.0 - time_extents.width() / 2.0).round(),
-                     y_shift + (height as f64 / 2.0 + time_extents.height() / 2.0).round()
-                 );
-                 c.show_text(&formatted_time).unwrap();
-             }
+                let current_time = Local::now();
+                let current_locale = Locale::try_from(locale.as_str()).unwrap_or(Locale::POSIX);
+                let formatted_time;
+                if format == "24hr" {
+                    formatted_time = format!(
+                        "{}:{}    {} {} {}",
+                        current_time.format_localized("%H", current_locale),
+                        current_time.format_localized("%M", current_locale),
+                        current_time.format_localized("%a", current_locale),
+                        current_time.format_localized("%-e", current_locale),
+                        current_time.format_localized("%b", current_locale)
+                    );
+                } else if format == "12hr" {
+                    formatted_time = format!(
+                        "{}:{} {}    {} {} {}",
+                        current_time.format_localized("%-l", current_locale),
+                        current_time.format_localized("%M", current_locale),
+                        current_time.format_localized("%p", current_locale),
+                        current_time.format_localized("%a", current_locale),
+                        current_time.format_localized("%-e", current_locale),
+                        current_time.format_localized("%b", current_locale)
+                    );
+                } else {
+                    let result = panic::catch_unwind(AssertUnwindSafe(|| {
+                        current_time.format_localized(format, current_locale).to_string()
+                    }));
+
+                    formatted_time = result.unwrap_or_else(|_| {
+                        "Time format error".to_string()
+                    });
+                }
+                let time_extents = c.text_extents(&formatted_time).unwrap();
+                c.move_to(
+                    button_left_edge + (button_width as f64 / 2.0 - time_extents.width() / 2.0).round(),
+                    y_shift + (height as f64 / 2.0 + time_extents.height() / 2.0).round()
+                );
+                c.show_text(&formatted_time).unwrap();
+            }
         }
     }
     fn set_active<F>(&mut self, uinput: &mut UInputHandle<F>, active: bool)
@@ -295,9 +303,6 @@ impl FunctionLayer {
                     if stretch < 1 {
                         println!("Stretch value must be at least 1, setting to 1.");
                         stretch = 1;
-                    }
-                    if cfg.time.is_some() {
-                        stretch = stretch * 3;
                     }
                     **state += stretch;
                     Some((i, Button::with_config(cfg)))
