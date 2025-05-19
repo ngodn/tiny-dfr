@@ -1,6 +1,6 @@
 use anyhow::{anyhow, Result};
 use cairo::{Antialias, Context, Format, ImageSurface, Surface};
-use chrono::{Local, Locale, Timelike, format::StrftimeItems};
+use chrono::{Local, Locale, Timelike, format::{StrftimeItems, Item as ChronoItem}};
 use drm::control::ClipRect;
 use freedesktop_icons::lookup;
 use input::{
@@ -58,7 +58,7 @@ enum ButtonImage {
     Text(String),
     Svg(Handle),
     Bitmap(ImageSurface),
-    Time(String, String),
+    Time(Vec<ChronoItem<'static>>, Locale),
 }
 
 struct Button {
@@ -159,11 +159,7 @@ impl Button {
         } else if let Some(icon) = cfg.icon {
             Button::new_icon(&icon, cfg.theme, cfg.action)
         } else if let Some(time) = cfg.time {
-            let locale = match cfg.locale {
-                 Some(l) => l,
-                 None => "POSIX".to_string()
-            };
-            Button::new_time(cfg.action, time, locale)
+            Button::new_time(cfg.action, &time, cfg.locale.as_deref())
         } else {
             panic!("Invalid config, a button must have either Text, Icon or Time")
         }
@@ -186,23 +182,26 @@ impl Button {
         }
     }
 
-    fn new_time(action: Key, format: String, locale: String) -> Button {
-        let format_string = if format == "24hr" {
-            "%H:%M    %a %-e %b".to_string()
+    fn new_time(action: Key, format: &str, locale_str: Option<&str>) -> Button {
+        let format_str = if format == "24hr" {
+            "%H:%M    %a %-e %b"
         } else if format == "12hr" {
-            "%-l:%M %p    %a %-e %b".to_string()
+            "%-l:%M %p    %a %-e %b"
         } else {
-            match StrftimeItems::new(&format).parse() {
-                Ok(_) => format,
-                Err(_) => "Time format error".to_string()
-            }
+            format
         };
 
+        let format_items = match StrftimeItems::new(format_str).parse_to_owned() {
+            Ok(s) => s,
+            Err(e) => panic!("Invalid time format, consult the configuration file for examples of correct ones: {e:?}"),
+        };
+
+        let locale = locale_str.and_then(|l| Locale::try_from(l).ok()).unwrap_or(Locale::POSIX);
         Button {
             action,
             active: false,
             changed: false,
-            image: ButtonImage::Time(format_string, locale),
+            image: ButtonImage::Time(format_items, locale),
         }
     }
     fn render(
@@ -240,8 +239,7 @@ impl Button {
             }
             ButtonImage::Time(format, locale) => {
                 let current_time = Local::now();
-                let current_locale = Locale::try_from(locale.as_str()).unwrap_or(Locale::POSIX);
-                let formatted_time = current_time.format_localized(format, current_locale).to_string();
+                let formatted_time = current_time.format_localized_with_items(format.iter(), *locale).to_string();
                 let time_extents = c.text_extents(&formatted_time).unwrap();
                 c.move_to(
                     button_left_edge + (button_width as f64 / 2.0 - time_extents.width() / 2.0).round(),
