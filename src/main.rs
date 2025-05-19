@@ -1,6 +1,6 @@
 use anyhow::{anyhow, Result};
 use cairo::{Antialias, Context, Format, ImageSurface, Surface};
-use chrono::{Local, Locale, Timelike};
+use chrono::{Local, Locale, Timelike, format::StrftimeItems};
 use drm::control::ClipRect;
 use freedesktop_icons::lookup;
 use input::{
@@ -187,11 +187,22 @@ impl Button {
     }
 
     fn new_time(action: Key, format: String, locale: String) -> Button {
+        let format_string = if format == "24hr" {
+            "%H:%M    %a %-e %b".to_string()
+        } else if format == "12hr" {
+            "%-l:%M %p    %a %-e %b".to_string()
+        } else {
+            match StrftimeItems::new(&format).parse() {
+                Ok(_) => format,
+                Err(_) => "Time format error".to_string()
+            }
+        };
+
         Button {
             action,
             active: false,
             changed: false,
-            image: ButtonImage::Time(format, locale),
+            image: ButtonImage::Time(format_string, locale),
         }
     }
     fn render(
@@ -230,35 +241,7 @@ impl Button {
             ButtonImage::Time(format, locale) => {
                 let current_time = Local::now();
                 let current_locale = Locale::try_from(locale.as_str()).unwrap_or(Locale::POSIX);
-                let formatted_time;
-                if format == "24hr" {
-                    formatted_time = format!(
-                        "{}:{}    {} {} {}",
-                        current_time.format_localized("%H", current_locale),
-                        current_time.format_localized("%M", current_locale),
-                        current_time.format_localized("%a", current_locale),
-                        current_time.format_localized("%-e", current_locale),
-                        current_time.format_localized("%b", current_locale)
-                    );
-                } else if format == "12hr" {
-                    formatted_time = format!(
-                        "{}:{} {}    {} {} {}",
-                        current_time.format_localized("%-l", current_locale),
-                        current_time.format_localized("%M", current_locale),
-                        current_time.format_localized("%p", current_locale),
-                        current_time.format_localized("%a", current_locale),
-                        current_time.format_localized("%-e", current_locale),
-                        current_time.format_localized("%b", current_locale)
-                    );
-                } else {
-                    let result = panic::catch_unwind(AssertUnwindSafe(|| {
-                        current_time.format_localized(format, current_locale).to_string()
-                    }));
-
-                    formatted_time = result.unwrap_or_else(|_| {
-                        "Time format error".to_string()
-                    });
-                }
+                let formatted_time = current_time.format_localized(format, current_locale).to_string();
                 let time_extents = c.text_extents(&formatted_time).unwrap();
                 c.move_to(
                     button_left_edge + (button_width as f64 / 2.0 - time_extents.width() / 2.0).round(),
