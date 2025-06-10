@@ -1,4 +1,5 @@
 use anyhow::{anyhow, Result};
+use battery::Manager;
 use cairo::{Antialias, Context, Format, ImageSurface, Surface};
 use chrono::{Local, Locale, Timelike, format::{StrftimeItems, Item as ChronoItem}};
 use drm::control::ClipRect;
@@ -54,11 +55,19 @@ const BUTTON_COLOR_ACTIVE: f64 = 0.400;
 const ICON_SIZE: i32 = 48;
 const TIMEOUT_MS: i32 = 10 * 1000;
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum BatteryState {
+    NotCharging,
+    Charging,
+    Low,
+}
+
 enum ButtonImage {
     Text(String),
     Svg(Handle),
     Bitmap(ImageSurface),
     Time(Vec<ChronoItem<'static>>, Locale),
+    Battery(BatteryState),
 }
 
 struct Button {
@@ -152,6 +161,28 @@ fn try_load_image(name: impl AsRef<str>, theme: Option<impl AsRef<str>>) -> Resu
     Err(last_err.context(format!("failed loading all possible paths for icon {name}")))
 }
 
+fn get_battery_state() -> BatteryState {
+    if let Ok(manager) = Manager::new() {
+        if let Ok(mut batteries) = manager.batteries() {
+            if let Some(Ok(battery)) = batteries.next() {
+                if matches!(battery.state(), battery::State::Charging | battery::State::Full) {
+                    BatteryState::Charging
+                } else if battery.energy().value / battery.energy_full().value < 0.10 {
+                    BatteryState::Low
+                } else {
+                    BatteryState::NotCharging
+                }
+            } else {
+                BatteryState::NotCharging
+            }
+        } else {
+            BatteryState::NotCharging
+        }
+    } else {
+        BatteryState::NotCharging
+    }
+}
+
 impl Button {
     fn with_config(cfg: ButtonConfig) -> Button {
         if let Some(text) = cfg.text {
@@ -160,6 +191,8 @@ impl Button {
             Button::new_icon(&icon, cfg.theme, cfg.action)
         } else if let Some(time) = cfg.time {
             Button::new_time(cfg.action, &time, cfg.locale.as_deref())
+        } else if cfg.battery == Some(true) {
+            Button::new_battery(cfg.action)
         } else {
             panic!("Invalid config, a button must have either Text, Icon or Time")
         }
@@ -179,6 +212,14 @@ impl Button {
             image,
             active: false,
             changed: false,
+        }
+    }
+    fn new_battery(action: Key) -> Button {
+        Button {
+            action,
+            active: false,
+            changed: false,
+            image: ButtonImage::Battery(get_battery_state()),
         }
     }
 
@@ -246,6 +287,22 @@ impl Button {
                     y_shift + (height as f64 / 2.0 + time_extents.height() / 2.0).round()
                 );
                 c.show_text(&formatted_time).unwrap();
+            }
+            ButtonImage::Battery(_) => {
+                let percent_str = (|| {
+                    let manager = Manager::new().ok()?;
+                    let mut batteries = manager.batteries().ok()?;
+                    let battery = batteries.next()?.ok()?;
+                    let percent = (battery.energy().value / battery.energy_full().value) * 100.0;
+                    Some(format!("{:.0}%", percent))
+                })().unwrap_or_else(|| ("Battery N/A".to_string()));
+
+                let extents = c.text_extents(&percent_str).unwrap();
+                c.move_to(
+                    button_left_edge + (button_width as f64 / 2.0 - extents.width() / 2.0).round(),
+                    y_shift + (height as f64 / 2.0 + extents.height() / 2.0).round(),
+                );
+                c.show_text(&percent_str).unwrap();
             }
         }
     }
@@ -369,7 +426,13 @@ impl FunctionLayer {
                 );
                 c.fill().unwrap();
             }
-            c.set_source_rgb(color, color, color);
+            if matches!(button.image, ButtonImage::Battery(BatteryState::Charging)) {
+                c.set_source_rgb(0.0, color, 0.0);
+            } else if matches!(button.image, ButtonImage::Battery(BatteryState::Low)) {
+                c.set_source_rgb(color, 0.0, 0.0);
+            } else {
+                c.set_source_rgb(color, color, color);
+            }
             // draw box with rounded corners
             c.new_sub_path();
             let left = left_edge + radius;
@@ -634,6 +697,18 @@ fn real_main(drm: &mut DrmBackend) {
             if matches!(button.1.image, ButtonImage::Time(_, _)) && (current_minute != last_redraw_minute) {
                  needs_complete_redraw = true;
                  last_redraw_minute = current_minute;
+            }
+        }
+
+        let battery_state = get_battery_state();
+
+        for button in &mut layers[active_layer].buttons {
+            if let ButtonImage::Battery(ref mut state) = button.1.image {
+                if *state != battery_state {
+                    *state = battery_state;
+                    button.1.changed = true;
+                    needs_complete_redraw = true;
+                }
             }
         }
 
