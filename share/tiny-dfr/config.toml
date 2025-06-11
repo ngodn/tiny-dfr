@@ -106,8 +106,12 @@ PrimaryLayerKeys = [
     # { Time = "%H:%M %-e.%m.%Y", Action = "Time", Stretch = 2}
 
     # Example of Battery:
-    # { Battery = true, Action = "Battery" }
+    # { Battery = "calculated", Action = "Battery" }
     # This will display a button showing the current battery percentage.
+    # The logic used to calcuate the percentage will be:
+    # (Amount of energy currently available / Amount of energy in the battery when it’s considered full) * 100
+    # { Battery = "reported", Action = "Battery" }
+    # This logic will get the value reported by the driver in /sys/class/power_supply.
     # Button will turn green if battery is charging, and red if charge is <10% and is not charging.
 ]
 

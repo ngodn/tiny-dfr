@@ -67,7 +67,7 @@ enum ButtonImage {
     Svg(Handle),
     Bitmap(ImageSurface),
     Time(Vec<ChronoItem<'static>>, Locale),
-    Battery(BatteryState),
+    Battery(BatteryState, String),
 }
 
 struct Button {
@@ -161,13 +161,14 @@ fn try_load_image(name: impl AsRef<str>, theme: Option<impl AsRef<str>>) -> Resu
     Err(last_err.context(format!("failed loading all possible paths for icon {name}")))
 }
 
-fn get_battery_state() -> BatteryState {
+fn get_battery_state(method: &str) -> BatteryState {
     if let Ok(manager) = Manager::new() {
         if let Ok(mut batteries) = manager.batteries() {
             if let Some(Ok(battery)) = batteries.next() {
                 if matches!(battery.state(), battery::State::Charging | battery::State::Full) {
                     BatteryState::Charging
-                } else if battery.energy().value / battery.energy_full().value < 0.10 {
+                } else if method == "calculated" && battery.energy().value / battery.energy_full().value < 0.10
+                          || method == "reported" && battery.state_of_charge().value < 0.10 {
                     BatteryState::Low
                 } else {
                     BatteryState::NotCharging
@@ -191,8 +192,8 @@ impl Button {
             Button::new_icon(&icon, cfg.theme, cfg.action)
         } else if let Some(time) = cfg.time {
             Button::new_time(cfg.action, &time, cfg.locale.as_deref())
-        } else if cfg.battery == Some(true) {
-            Button::new_battery(cfg.action)
+        } else if let Some(battery) = cfg.battery {
+            Button::new_battery(cfg.action, battery)
         } else {
             panic!("Invalid config, a button must have either Text, Icon or Time")
         }
@@ -214,12 +215,12 @@ impl Button {
             changed: false,
         }
     }
-    fn new_battery(action: Key) -> Button {
+    fn new_battery(action: Key, method: String) -> Button {
         Button {
             action,
             active: false,
             changed: false,
-            image: ButtonImage::Battery(get_battery_state()),
+            image: ButtonImage::Battery(get_battery_state(&method), method),
         }
     }
 
@@ -288,12 +289,18 @@ impl Button {
                 );
                 c.show_text(&formatted_time).unwrap();
             }
-            ButtonImage::Battery(_) => {
+            ButtonImage::Battery(_, method) => {
                 let percent_str = (|| {
                     let manager = Manager::new().ok()?;
                     let mut batteries = manager.batteries().ok()?;
                     let battery = batteries.next()?.ok()?;
-                    let percent = (battery.energy().value / battery.energy_full().value) * 100.0;
+                    let percent = if method == "reported" {
+                        battery.state_of_charge().value * 100.0
+                    } else if method == "calculated" {
+                        (battery.energy().value / battery.energy_full().value) * 100.0
+                    } else {
+                        return None;
+                    };
                     Some(format!("{:.0}%", percent))
                 })().unwrap_or_else(|| ("Battery N/A".to_string()));
 
@@ -426,9 +433,9 @@ impl FunctionLayer {
                 );
                 c.fill().unwrap();
             }
-            if matches!(button.image, ButtonImage::Battery(BatteryState::Charging)) {
+            if matches!(button.image, ButtonImage::Battery(BatteryState::Charging, _)) {
                 c.set_source_rgb(0.0, color, 0.0);
-            } else if matches!(button.image, ButtonImage::Battery(BatteryState::Low)) {
+            } else if matches!(button.image, ButtonImage::Battery(BatteryState::Low, _)) {
                 c.set_source_rgb(color, 0.0, 0.0);
             } else {
                 c.set_source_rgb(color, color, color);
@@ -698,12 +705,8 @@ fn real_main(drm: &mut DrmBackend) {
                  needs_complete_redraw = true;
                  last_redraw_minute = current_minute;
             }
-        }
-
-        let battery_state = get_battery_state();
-
-        for button in &mut layers[active_layer].buttons {
-            if let ButtonImage::Battery(ref mut state) = button.1.image {
+            if let ButtonImage::Battery(ref mut state, ref method) = button.1.image {
+                let battery_state = get_battery_state(&method);
                 if *state != battery_state {
                     *state = battery_state;
                     button.1.changed = true;
