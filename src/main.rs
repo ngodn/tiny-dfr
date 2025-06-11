@@ -249,6 +249,7 @@ impl Button {
     fn render(
         &self,
         c: &Context,
+        config: &Config,
         height: i32,
         button_left_edge: f64,
         button_width: u64,
@@ -289,7 +290,7 @@ impl Button {
                 );
                 c.show_text(&formatted_time).unwrap();
             }
-            ButtonImage::Battery(_, method) => {
+            ButtonImage::Battery(state, method) => {
                 let percent_str = (|| {
                     let manager = Manager::new().ok()?;
                     let mut batteries = manager.batteries().ok()?;
@@ -305,6 +306,13 @@ impl Button {
                 })().unwrap_or_else(|| ("Battery N/A".to_string()));
 
                 let extents = c.text_extents(&percent_str).unwrap();
+                if !config.show_button_outlines && !self.active {
+                    if *state == BatteryState::Charging {
+                        c.set_source_rgb(0.0, 1.0, 0.0);
+                    } else if *state == BatteryState::Low {
+                        c.set_source_rgb(1.0, 0.0, 0.0);
+                    }
+                }
                 c.move_to(
                     button_left_edge + (button_width as f64 / 2.0 - extents.width() / 2.0).round(),
                     y_shift + (height as f64 / 2.0 + extents.height() / 2.0).round(),
@@ -478,6 +486,7 @@ impl FunctionLayer {
             c.set_source_rgb(1.0, 1.0, 1.0);
             button.render(
                 &c,
+                config,
                 height,
                 left_edge,
                 button_width.ceil() as u64,
