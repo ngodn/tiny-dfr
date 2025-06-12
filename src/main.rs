@@ -1,5 +1,4 @@
 use anyhow::{anyhow, Result};
-use battery::Manager;
 use cairo::{Antialias, Context, Format, ImageSurface, Surface};
 use chrono::{Local, Locale, Timelike, format::{StrftimeItems, Item as ChronoItem}};
 use drm::control::ClipRect;
@@ -28,7 +27,7 @@ use privdrop::PrivDrop;
 use std::{
     cmp::min,
     collections::HashMap,
-    fs::{File, OpenOptions},
+    fs::{self, File, OpenOptions},
     os::{
         fd::{AsFd, AsRawFd},
         unix::{fs::OpenOptionsExt, io::OwnedFd},
@@ -162,25 +161,33 @@ fn try_load_image(name: impl AsRef<str>, theme: Option<impl AsRef<str>>) -> Resu
 }
 
 fn get_battery_state(method: &str) -> BatteryState {
-    if let Ok(manager) = Manager::new() {
-        if let Ok(mut batteries) = manager.batteries() {
-            if let Some(Ok(battery)) = batteries.next() {
-                if matches!(battery.state(), battery::State::Charging | battery::State::Full) {
-                    BatteryState::Charging
-                } else if method == "calculated" && battery.energy().value / battery.energy_full().value < 0.10
-                          || method == "reported" && battery.state_of_charge().value < 0.10 {
-                    BatteryState::Low
-                } else {
-                    BatteryState::NotCharging
-                }
-            } else {
-                BatteryState::NotCharging
-            }
-        } else {
-            BatteryState::NotCharging
+    let status = fs::read_to_string("/sys/class/power_supply/BAT0/status")
+        .unwrap_or_else(|_| "Unknown".to_string());
+
+    let capacity = if method == "calculated" {
+        let charge_now = fs::read_to_string("/sys/class/power_supply/BAT0/charge_now")
+            .ok()
+            .and_then(|s| s.trim().parse::<f64>().ok());
+        let charge_full = fs::read_to_string("/sys/class/power_supply/BAT0/charge_full")
+            .ok()
+            .and_then(|s| s.trim().parse::<f64>().ok());
+        match (charge_now, charge_full) {
+            (Some(now), Some(full)) if full > 0.0 => ((now / full) * 100.0).round() as u8,
+            _ => 100,
         }
+    } else if method == "reported" {
+        fs::read_to_string("/sys/class/power_supply/BAT0/capacity")
+            .ok()
+            .and_then(|s| s.trim().parse::<u8>().ok())
+            .unwrap_or(100)
     } else {
-        BatteryState::NotCharging
+        100
+    };
+
+    match status.trim() {
+        "Charging" | "Full" => BatteryState::Charging,
+        "Discharging" if capacity < 10 => BatteryState::Low,
+        _ => BatteryState::NotCharging,
     }
 }
 
@@ -291,19 +298,26 @@ impl Button {
                 c.show_text(&formatted_time).unwrap();
             }
             ButtonImage::Battery(state, method) => {
-                let percent_str = (|| {
-                    let manager = Manager::new().ok()?;
-                    let mut batteries = manager.batteries().ok()?;
-                    let battery = batteries.next()?.ok()?;
-                    let percent = if method == "reported" {
-                        battery.state_of_charge().value * 100.0
-                    } else if method == "calculated" {
-                        (battery.energy().value / battery.energy_full().value) * 100.0
-                    } else {
-                        return None;
-                    };
-                    Some(format!("{:.0}%", percent))
-                })().unwrap_or_else(|| ("Battery N/A".to_string()));
+                let percent_str = if method == "calculated" {
+                    let charge_now = fs::read_to_string("/sys/class/power_supply/BAT0/charge_now")
+                        .ok()
+                        .and_then(|s| s.trim().parse::<f64>().ok());
+                    let charge_full = fs::read_to_string("/sys/class/power_supply/BAT0/charge_full")
+                        .ok()
+                        .and_then(|s| s.trim().parse::<f64>().ok());
+                    match (charge_now, charge_full) {
+                        (Some(now), Some(full)) if full > 0.0 => format!("{:.0}%", (now / full) * 100.0),
+                        _ => "Battery N/A".to_string(),
+                    }
+                } else if method == "reported" {
+                    fs::read_to_string("/sys/class/power_supply/BAT0/capacity")
+                        .ok()
+                        .and_then(|s| s.trim().parse::<u8>().ok())
+                        .map(|percent| format!("{:.0}%", percent))
+                        .unwrap_or_else(|| "Battery N/A".to_string())
+                } else {
+                    "Battery N/A".to_string()
+                };
 
                 let extents = c.text_extents(&percent_str).unwrap();
                 if !config.show_button_outlines && !self.active {
