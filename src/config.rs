@@ -42,7 +42,7 @@ pub struct ButtonConfig {
     pub text: Option<String>,
     pub theme: Option<String>,
     pub time: Option<String>,
-    pub battery: Option<String>,
+    pub battery: Option<bool>,
     pub locale: Option<String>,
     pub action: Key,
     pub stretch: Option<usize>,
