@@ -160,16 +160,38 @@ fn try_load_image(name: impl AsRef<str>, theme: Option<impl AsRef<str>>) -> Resu
     Err(last_err.context(format!("failed loading all possible paths for icon {name}")))
 }
 
+fn find_battery_device() -> Option<String> {
+    let power_supply_path = "/sys/class/power_supply";
+    if let Ok(entries) = fs::read_dir(power_supply_path) {
+        for entry in entries.flatten() {
+            let dev_path = entry.path();
+            let type_path = dev_path.join("type");
+            if let Ok(typ) = fs::read_to_string(&type_path) {
+                if typ.trim() == "Battery" {
+                    if let Some(name) = dev_path.file_name().and_then(|n| n.to_str()) {
+                        return Some(name.to_string());
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
 fn get_battery_state() -> BatteryState {
-    let status = fs::read_to_string("/sys/class/power_supply/BAT0/status")
+    let battery = find_battery_device().unwrap();
+    let status_path = format!("/sys/class/power_supply/{}/status", battery);
+    let status = fs::read_to_string(&status_path)
         .unwrap_or_else(|_| "Unknown".to_string());
 
     #[cfg(target_arch = "x86_64")]
     let capacity = {
-        let charge_now = fs::read_to_string("/sys/class/power_supply/BAT0/charge_now")
+        let charge_now_path = format!("/sys/class/power_supply/{}/charge_now", battery);
+        let charge_full_path = format!("/sys/class/power_supply/{}/charge_full", battery);
+        let charge_now = fs::read_to_string(&charge_now_path)
             .ok()
             .and_then(|s| s.trim().parse::<f64>().ok());
-        let charge_full = fs::read_to_string("/sys/class/power_supply/BAT0/charge_full")
+        let charge_full = fs::read_to_string(&charge_full_path)
             .ok()
             .and_then(|s| s.trim().parse::<f64>().ok());
         match (charge_now, charge_full) {
@@ -180,7 +202,8 @@ fn get_battery_state() -> BatteryState {
 
     #[cfg(target_arch = "aarch64")]
     let capacity = {
-        fs::read_to_string("/sys/class/power_supply/BAT0/capacity")
+        let capacity_path = format!("/sys/class/power_supply/{}/capacity", battery);
+        fs::read_to_string(&capacity_path)
             .ok()
             .and_then(|s| s.trim().parse::<u8>().ok())
             .unwrap_or(100)
@@ -300,12 +323,16 @@ impl Button {
                 c.show_text(&formatted_time).unwrap();
             }
             ButtonImage::Battery(state) => {
+                let battery = find_battery_device().unwrap();
+
                 #[cfg(target_arch = "x86_64")]
                 let percent_str = {
-                    let charge_now = fs::read_to_string("/sys/class/power_supply/BAT0/charge_now")
+                    let charge_now_path = format!("/sys/class/power_supply/{}/charge_now", battery);
+                    let charge_full_path = format!("/sys/class/power_supply/{}/charge_full", battery);
+                    let charge_now = fs::read_to_string(&charge_now_path)
                         .ok()
                         .and_then(|s| s.trim().parse::<f64>().ok());
-                    let charge_full = fs::read_to_string("/sys/class/power_supply/BAT0/charge_full")
+                    let charge_full = fs::read_to_string(&charge_full_path)
                         .ok()
                         .and_then(|s| s.trim().parse::<f64>().ok());
                     match (charge_now, charge_full) {
@@ -316,7 +343,8 @@ impl Button {
 
                 #[cfg(target_arch = "aarch64")]
                 let percent_str = {
-                    fs::read_to_string("/sys/class/power_supply/BAT0/capacity")
+                    let capacity_path = format!("/sys/class/power_supply/{}/capacity", battery);
+                    fs::read_to_string(&capacity_path)
                         .ok()
                         .and_then(|s| s.trim().parse::<u8>().ok())
                         .map(|percent| format!("{:.0}%", percent))
