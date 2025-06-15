@@ -61,12 +61,34 @@ enum BatteryState {
     Low,
 }
 
+struct BatteryImages {
+    plain: Vec<Handle>,
+    charging: Vec<Handle>,
+    bolt: Handle,
+}
+
+#[derive(Eq, PartialEq, Copy, Clone)]
+enum BatteryIconMode {
+    Percentage,
+    Icon,
+    Both
+}
+
+impl BatteryIconMode {
+    fn should_draw_icon(self) -> bool {
+        self != BatteryIconMode::Percentage
+    }
+    fn should_draw_text(self) -> bool {
+        self != BatteryIconMode::Icon
+    }
+}
+
 enum ButtonImage {
     Text(String),
     Svg(Handle),
     Bitmap(ImageSurface),
     Time(Vec<ChronoItem<'static>>, Locale),
-    Battery(String, String, HashMap<&'static str, Handle>),
+    Battery(String, BatteryIconMode, BatteryImages),
 }
 
 struct Button {
@@ -251,36 +273,42 @@ impl Button {
             changed: false,
         }
     }
-    fn new_battery(action: Key, battery: String, battery_mode: String, theme: Option<impl AsRef<str>>) -> Button {
-        let mut icons = HashMap::new();
-        // Load all relevant icons at creation
-        for icon in [
-            ("bolt"),
-            ("battery_0_bar"),
-            ("battery_1_bar"),
-            ("battery_2_bar"),
-            ("battery_3_bar"),
-            ("battery_4_bar"),
-            ("battery_5_bar"),
-            ("battery_6_bar"),
-            ("battery_full"),
-            ("battery_charging_20"),
-            ("battery_charging_30"),
-            ("battery_charging_50"),
-            ("battery_charging_60"),
-            ("battery_charging_80"),
-            ("battery_charging_90"),
-            ("battery_charging_full"),
-        ] {
-            if let Ok(ButtonImage::Svg(svg)) = try_load_image(icon, theme.as_ref()) {
-                icons.insert(icon, svg);
-            }
+    fn load_battery_image(icon: &str, theme: Option<impl AsRef<str>>) -> Handle {
+        if let ButtonImage::Svg(svg) = try_load_image(icon, theme).unwrap() {
+            return svg;
         }
+        panic!("failed to load icon");
+    }
+    fn new_battery(action: Key, battery: String, battery_mode: String, theme: Option<impl AsRef<str>>) -> Button {
+        let bolt = Self::load_battery_image("bolt", theme.as_ref());
+        let mut plain = Vec::new();
+        let mut charging = Vec::new();
+        for icon in [
+            "battery_0_bar", "battery_1_bar", "battery_2_bar", "battery_3_bar",
+            "battery_4_bar", "battery_5_bar", "battery_6_bar", "battery_full",
+        ] {
+            plain.push(Self::load_battery_image(icon, theme.as_ref()));
+        }
+        for icon in [
+            "battery_charging_20", "battery_charging_30", "battery_charging_50",
+            "battery_charging_60", "battery_charging_80",
+            "battery_charging_90", "battery_charging_full",
+        ] {
+            charging.push(Self::load_battery_image(icon, theme.as_ref()));
+        }
+        let battery_mode = match battery_mode.as_str() {
+            "icon" => BatteryIconMode::Icon,
+            "percentage" => BatteryIconMode::Percentage,
+            "both" => BatteryIconMode::Both,
+            _ => panic!("invalid battery mode, accepted modes: icon, percentage, both"),
+        };
         Button {
             action,
             active: false,
             changed: false,
-            image: ButtonImage::Battery(battery, battery_mode, icons),
+            image: ButtonImage::Battery(battery, battery_mode, BatteryImages {
+                plain, bolt, charging
+            }),
         }
     }
 
@@ -351,41 +379,39 @@ impl Button {
             }
             ButtonImage::Battery(battery, battery_mode, icons) => {
                 let (capacity, state) = get_battery_state(battery);
-                let icon = match battery_mode.as_str() {
-                        "icon" | "both" => match state {
+                let icon = if battery_mode.should_draw_icon() {
+                    Some(match state {
                         BatteryState::Charging => match capacity {
-                            0..=20 => "battery_charging_20",
-                            21..=30 => "battery_charging_30",
-                            31..=50 => "battery_charging_50",
-                            51..=60 => "battery_charging_60",
-                            61..=80 => "battery_charging_80",
-                            81..=99 => "battery_charging_90",
-                            _ => "battery_charging_full",
+                            0..=20 => &icons.charging[0],
+                            21..=30 => &icons.charging[1],
+                            31..=50 => &icons.charging[2],
+                            51..=60 => &icons.charging[3],
+                            61..=80 => &icons.charging[4],
+                            81..=99 => &icons.charging[5],
+                            _ => &icons.charging[6],
                         },
                         _ => match capacity {
-                            0 => "battery_0_bar",
-                            1..=20 => "battery_1_bar",
-                            21..=30 => "battery_2_bar",
-                            31..=50 => "battery_3_bar",
-                            51..=60 => "battery_4_bar",
-                            61..=80 => "battery_5_bar",
-                            81..=99 => "battery_6_bar",
-                            _ => "battery_full",
+                            0 => &icons.plain[0],
+                            1..=20 => &icons.plain[1],
+                            21..=30 => &icons.plain[2],
+                            31..=50 => &icons.plain[3],
+                            51..=60 => &icons.plain[4],
+                            61..=80 => &icons.plain[5],
+                            81..=99 => &icons.plain[6],
+                            _ => &icons.plain[7],
                         },
-                    },
-                    "percentage" => {
-                        if state == BatteryState::Charging { "bolt" } else {""}
-                    },
-                    _ => {
-                        panic!("Invalid battery mode: {battery_mode}. Valid modes are 'icon', 'percentage', or 'both'.")
-                    },
+                    })
+                } else if state == BatteryState::Charging {
+                    Some(&icons.bolt)
+                } else {
+                    None
                 };
                 let percent_str = format!("{:.0}%", capacity);
                 let extents = c.text_extents(&percent_str).unwrap();
                 let mut width = extents.width();
                 let mut text_offset = 0;
-                if let Some(svg) = icons.get(icon) {
-                    if battery_mode == "icon" {
+                if let Some(svg) = icon {
+                    if !battery_mode.should_draw_text() {
                         width = ICON_SIZE as f64;
                     } else {
                         width += ICON_SIZE as f64;
@@ -398,7 +424,7 @@ impl Button {
                     svg.render_document(c, &Rectangle::new(x, y, ICON_SIZE as f64, ICON_SIZE as f64))
                         .unwrap();
                 }
-                if battery_mode != "icon" {
+                if battery_mode.should_draw_text() {
                     c.move_to(
                         button_left_edge + (button_width as f64 / 2.0 - width / 2.0 + text_offset as f64).round(),
                         y_shift + (height as f64 / 2.0 + extents.height() / 2.0).round(),
