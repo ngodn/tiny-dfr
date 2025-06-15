@@ -106,8 +106,12 @@ PrimaryLayerKeys = [
     # { Time = "%H:%M %-e.%m.%Y", Action = "Time", Stretch = 2}
 
     # Example of Battery:
-    # { Battery = true, Action = "Battery" }
+    # { Battery = "percentage", Action = "Battery" }
     # This will display a button showing the current battery percentage.
+    # { Battery = "icon", Action = "Battery" }
+    # This will display a button showing a battery icon instead of percentage.
+    # { Battery = "both", Action = "Battery" }
+    # This will display a button showing a battery icon as well as percentage.
     # The logic used to calcuate the percentage will be:
     # 1. On T2 Macs:
     # (Amount of energy currently available / Amount of energy in the battery when it’s considered full) * 100

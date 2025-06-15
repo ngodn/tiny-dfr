@@ -66,7 +66,7 @@ enum ButtonImage {
     Svg(Handle),
     Bitmap(ImageSurface),
     Time(Vec<ChronoItem<'static>>, Locale),
-    Battery(String, Handle),
+    Battery(String, String, HashMap<&'static str, Handle>),
 }
 
 struct Button {
@@ -224,9 +224,9 @@ impl Button {
             Button::new_icon(&icon, cfg.theme, cfg.action)
         } else if let Some(time) = cfg.time {
             Button::new_time(cfg.action, &time, cfg.locale.as_deref())
-        } else if cfg.battery == Some(true) {
+        } else if let Some(battery_mode) = cfg.battery {
             if let Some(battery) = find_battery_device() {
-                Button::new_battery(cfg.action, battery, cfg.theme)
+                Button::new_battery(cfg.action, battery, battery_mode, cfg.theme)
             } else {
                 Button::new_text("Battery N/A".to_string(), cfg.action)
             }
@@ -251,14 +251,36 @@ impl Button {
             changed: false,
         }
     }
-    fn new_battery(action: Key, battery: String, theme: Option<impl AsRef<str>>) -> Button {
-        let image = try_load_image("bolt", theme).expect("failed to load icon");
-        let svg = if let ButtonImage::Svg(svg) = image { svg } else { panic!("Battery icon invalid") };
+    fn new_battery(action: Key, battery: String, battery_mode: String, theme: Option<impl AsRef<str>>) -> Button {
+        let mut icons = HashMap::new();
+        // Load all relevant icons at creation
+        for icon in [
+            ("bolt"),
+            ("battery_0_bar"),
+            ("battery_1_bar"),
+            ("battery_2_bar"),
+            ("battery_3_bar"),
+            ("battery_4_bar"),
+            ("battery_5_bar"),
+            ("battery_6_bar"),
+            ("battery_full"),
+            ("battery_charging_20"),
+            ("battery_charging_30"),
+            ("battery_charging_50"),
+            ("battery_charging_60"),
+            ("battery_charging_80"),
+            ("battery_charging_90"),
+            ("battery_charging_full"),
+        ] {
+            if let Ok(ButtonImage::Svg(svg)) = try_load_image(icon, theme.as_ref()) {
+                icons.insert(icon, svg);
+            }
+        }
         Button {
             action,
             active: false,
             changed: false,
-            image: ButtonImage::Battery(battery, svg),
+            image: ButtonImage::Battery(battery, battery_mode, icons),
         }
     }
 
@@ -327,14 +349,47 @@ impl Button {
                 );
                 c.show_text(&formatted_time).unwrap();
             }
-            ButtonImage::Battery(battery, svg) => {
+            ButtonImage::Battery(battery, battery_mode, icons) => {
                 let (capacity, state) = get_battery_state(battery);
+                let icon = match battery_mode.as_str() {
+                        "icon" | "both" => match state {
+                        BatteryState::Charging => match capacity {
+                            0..=20 => "battery_charging_20",
+                            21..=30 => "battery_charging_30",
+                            31..=50 => "battery_charging_50",
+                            51..=60 => "battery_charging_60",
+                            61..=80 => "battery_charging_80",
+                            81..=99 => "battery_charging_90",
+                            _ => "battery_charging_full",
+                        },
+                        _ => match capacity {
+                            0 => "battery_0_bar",
+                            1..=20 => "battery_1_bar",
+                            21..=30 => "battery_2_bar",
+                            31..=50 => "battery_3_bar",
+                            51..=60 => "battery_4_bar",
+                            61..=80 => "battery_5_bar",
+                            81..=99 => "battery_6_bar",
+                            _ => "battery_full",
+                        },
+                    },
+                    "percentage" => {
+                        if state == BatteryState::Charging { "bolt" } else {""}
+                    },
+                    _ => {
+                        panic!("Invalid battery mode: {battery_mode}. Valid modes are 'icon', 'percentage', or 'both'.")
+                    },
+                };
                 let percent_str = format!("{:.0}%", capacity);
                 let extents = c.text_extents(&percent_str).unwrap();
                 let mut width = extents.width();
                 let mut text_offset = 0;
-                if state == BatteryState::Charging {
-                    width += ICON_SIZE as f64;
+                if let Some(svg) = icons.get(icon) {
+                    if battery_mode == "icon" {
+                        width = ICON_SIZE as f64;
+                    } else {
+                        width += ICON_SIZE as f64;
+                    }
                     text_offset = ICON_SIZE;
                     let x =
                         button_left_edge + (button_width as f64 / 2.0 - width / 2.0).round();
@@ -343,11 +398,13 @@ impl Button {
                     svg.render_document(c, &Rectangle::new(x, y, ICON_SIZE as f64, ICON_SIZE as f64))
                         .unwrap();
                 }
-                c.move_to(
-                    button_left_edge + (button_width as f64 / 2.0 - width / 2.0 + text_offset as f64).round(),
-                    y_shift + (height as f64 / 2.0 + extents.height() / 2.0).round(),
-                );
-                c.show_text(&percent_str).unwrap();
+                if battery_mode != "icon" {
+                    c.move_to(
+                        button_left_edge + (button_width as f64 / 2.0 - width / 2.0 + text_offset as f64).round(),
+                        y_shift + (height as f64 / 2.0 + extents.height() / 2.0).round(),
+                    );
+                    c.show_text(&percent_str).unwrap();
+                }
             }
         }
     }
@@ -363,7 +420,7 @@ impl Button {
         }
     }
     fn set_backround_color(&self, c: &Context, color: f64) {
-        if let ButtonImage::Battery(battery, _) = &self.image {
+        if let ButtonImage::Battery(battery, _, _) = &self.image {
             let (_, state) = get_battery_state(battery);
             match state {
                 BatteryState::NotCharging => c.set_source_rgb(color, color, color),
@@ -749,7 +806,7 @@ fn real_main(drm: &mut DrmBackend) {
                  needs_complete_redraw = true;
                  last_redraw_minute = current_minute;
             }
-            if let ButtonImage::Battery(_, _) = button.1.image {
+            if let ButtonImage::Battery(_, _, _) = button.1.image {
                 button.1.changed = true;
             }
         }
