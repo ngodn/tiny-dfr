@@ -506,7 +506,7 @@ dependencies = [
  "io-lifetimes",
  "libc",
  "log",
- "udev",
+ "udev 0.7.0",
 ]
 
 [[package]]
@@ -929,10 +929,10 @@ dependencies = [
  "nix 0.29.0",
  "pkg-config",
  "privdrop",
- "pure-rust-locales",
  "rand",
  "serde",
  "toml",
+ "udev 0.9.3",
 ]
 
 [[package]]
@@ -1013,6 +1013,18 @@ version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4ebdbbd670373442a12fe9ef7aeb53aec4147a5a27a00bbc3ab639f08f48191a"
 dependencies = [
+ "libc",
+ "libudev-sys",
+ "pkg-config",
+]
+
+[[package]]
+name = "udev"
+version = "0.9.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "af4e37e9ea4401fc841ff54b9ddfc9be1079b1e89434c1a6a865dd68980f7e9f"
+dependencies = [
+ "io-lifetimes",
  "libc",
  "libudev-sys",
  "pkg-config",
