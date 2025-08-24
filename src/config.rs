@@ -19,6 +19,8 @@ pub struct Config {
     pub font_face: FontFace,
     pub adaptive_brightness: bool,
     pub active_brightness: u32,
+    pub keyboard_brightness_step: u32,
+    pub keyboard_brightness_enabled: bool,
 }
 
 #[derive(Deserialize)]
@@ -32,6 +34,8 @@ struct ConfigProxy {
     active_brightness: Option<u32>,
     primary_layer_keys: Option<Vec<ButtonConfig>>,
     media_layer_keys: Option<Vec<ButtonConfig>>,
+    keyboard_brightness_step: Option<u32>,
+    keyboard_brightness_enabled: Option<bool>,
 }
 
 #[derive(Deserialize)]
@@ -79,6 +83,8 @@ fn load_config(width: u16) -> (Config, [FunctionLayer; 2]) {
         base.media_layer_keys = user.media_layer_keys.or(base.media_layer_keys);
         base.primary_layer_keys = user.primary_layer_keys.or(base.primary_layer_keys);
         base.active_brightness = user.active_brightness.or(base.active_brightness);
+        base.keyboard_brightness_step = user.keyboard_brightness_step.or(base.keyboard_brightness_step);
+        base.keyboard_brightness_enabled = user.keyboard_brightness_enabled.or(base.keyboard_brightness_enabled);
     };
     let mut media_layer_keys = base.media_layer_keys.unwrap();
     let mut primary_layer_keys = base.primary_layer_keys.unwrap();
@@ -112,6 +118,8 @@ fn load_config(width: u16) -> (Config, [FunctionLayer; 2]) {
         adaptive_brightness: base.adaptive_brightness.unwrap(),
         font_face: load_font(&base.font_template.unwrap()),
         active_brightness: base.active_brightness.unwrap(),
+        keyboard_brightness_step: base.keyboard_brightness_step.unwrap_or(32),
+        keyboard_brightness_enabled: base.keyboard_brightness_enabled.unwrap_or(true),
     };
     (cfg, layers)
 }
