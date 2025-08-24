@@ -35,6 +35,20 @@ AdaptiveBrightness = true
 # Accepted values are 0-255
 ActiveBrightness = 128
 
+# Keyboard backlight control settings
+# Set this to false if you want the keyboard backlight buttons to send
+# key events to the system instead of directly controlling the hardware
+KeyboardBrightnessEnabled = true
+
+# Step size for keyboard brightness changes
+# This controls how much the brightness changes with each button press
+# For T2 Macs with max brightness ~14660, recommended values are:
+# - 1466 (default) - 10 steps from 0 to max (10% per step)
+# - 732 - 20 steps from 0 to max (5% per step) - finer control
+# - 2932 - 5 steps from 0 to max (20% per step) - coarser control
+# - 146 - 100 steps from 0 to max (1% per step) - very fine control
+KeyboardBrightnessStep = 1466
+
 # This key defines the contents of the primary layer
 # (the one with F{number} keys)
 # You can change the individual buttons, add, or remove them
