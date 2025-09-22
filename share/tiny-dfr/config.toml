@@ -149,7 +149,7 @@ MediaLayerKeys = [
     { Icon = "volume_down",     Action = "VolumeDown"     },
     { Icon = "volume_up",       Action = "VolumeUp"       },
     { Icon = "bolt",         Action = "Command_4"        },
-    { Icon = "capture",         Action = "Command_2"        },
+    { Icon = "terminal",         Action = "Command_2"        },
     { Icon = "apps",          Action = "Command_3"         }
 
     # Example with XDG icons (requires `breeze-dark` theme installed):
