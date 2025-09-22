@@ -4,18 +4,6 @@ After=systemd-user-sessions.service getty@tty1.service plymouth-quit.service sys
 BindsTo=dev-tiny_dfr_display.device dev-tiny_dfr_backlight.device dev-tiny_dfr_display_backlight.device
 
 [Service]
+User=root
 ExecStart=/usr/bin/tiny-dfr
 Restart=always
-
-NoNewPrivileges=true
-ProtectSystem=strict
-ProtectHome=true
-PrivateTmp=true
-PrivateIPC=true
-ProtectKernelTunables=true
-ProtectKernelModules=true
-ProtectKernelLogs=true
-ProtectControlGroups=strict
-RestrictAddressFamilies=AF_UNIX AF_NETLINK
-RestrictNamespaces=true
-RestrictSUIDSGID=true

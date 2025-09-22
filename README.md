@@ -6,6 +6,13 @@ The most basic dynamic function row daemon possible for T2 MacBooks (MacBook Pro
 
 tiny-dfr provides customizable Touch Bar functionality on T2 MacBooks running Linux. By default, the Touch Bar works in the same mode as Windows Bootcamp, but tiny-dfr allows you to customize it with your own layouts and functions.
 
+### Features
+- Customizable Touch Bar layouts and functions
+- **Hardware keyboard backlight control** - Automatically detects and controls keyboard backlight on supported MacBooks
+- **Command execution** - Execute custom shell commands and applications from Touch Bar buttons
+- Icon themes and customization
+- Systemd integration for automatic startup
+
 **Inspired by**: [T2 Linux Wiki - Adding support for customisable Touch Bar](https://wiki.t2linux.org/guides/postinstall/#adding-support-for-customisable-touch-bar)
 
 ## Prerequisites
@@ -70,6 +77,74 @@ See the config file comments for detailed options.
 sudo systemctl restart tiny-dfr
 ```
 
+## Command Execution
+
+tiny-dfr supports executing custom shell commands and applications from Touch Bar buttons using the `Command_X` action system.
+
+### Configuration
+
+1. **Define commands** in `/etc/tiny-dfr/commands.toml`:
+```toml
+# Example commands
+Command_1 = "firefox"
+Command_2 = "omarchy-menu capture"
+Command_3 = "walker -p \"Launch…\""
+Command_4 = "alacritty"
+Command_5 = "rofi -show drun"
+```
+
+2. **Use commands** in `/etc/tiny-dfr/config.toml`:
+```toml
+MediaLayerKeys = [
+    { Icon = "firefox", Action = "Command_1" },
+    { Icon = "capture", Action = "Command_2" },
+    { Icon = "apps",    Action = "Command_3" },
+    # ... other buttons
+]
+```
+
+### Features
+
+- **Full user environment**: Commands run with your complete shell environment and theming
+- **GUI application support**: Automatic display environment setup for Wayland/X11 applications
+- **Dynamic user detection**: Works across different users without hardcoded paths
+- **Background execution**: Commands run asynchronously without blocking the Touch Bar
+
+**Note**: Command execution has been tested on Arch Linux with Omarchy. Other distributions and desktop environments may require additional configuration.
+
+### Supported Command Types
+
+- **GUI applications**: `firefox`, `code`, `nautilus`
+- **Terminal applications**: `alacritty`, `terminal commands`
+- **System utilities**: `rofi -show drun`, `walker -p "Launch…"`
+- **Custom scripts**: Any executable in your PATH or absolute path
+
+## Keyboard Backlight Support
+
+tiny-dfr automatically detects and controls hardware keyboard backlight on supported MacBooks. The system searches for keyboard backlight devices in the following priority order:
+
+1. **T2 Mac specific path**: `/sys/class/leds/:white:kbd_backlight`
+2. **SMC keyboard backlight**: `/sys/class/leds/smc::kbd_backlight`
+3. **Generic search**: Any device in `/sys/class/leds/` containing "kbd" or "keyboard"
+
+### Testing and Feedback Needed
+
+**Are you using a T1 or T2 MacBook?** We need your help to improve keyboard backlight compatibility!
+
+If keyboard backlight isn't working on your MacBook, please:
+1. Check what keyboard backlight devices exist on your system:
+   ```bash
+   ls -la /sys/class/leds/ | grep -i kbd
+   # or
+   find /sys/class/leds/ -name "*kbd*" -o -name "*keyboard*"
+   ```
+
+2. Report your findings in a GitHub issue with:
+   - Your MacBook model (e.g., MacBook Pro 13,3, MacBook Air 8,1)
+   - The path(s) found by the commands above
+   - Whether you're using T1 or T2 hardware
+
+This helps us add support for more MacBook models!
 
 ## Troubleshooting
 
@@ -87,6 +162,17 @@ lsmod | grep uinput
 3. Verify service status:
 ```bash
 sudo systemctl status tiny-dfr
+```
+
+### Keyboard Backlight Issues
+1. Check if keyboard backlight was detected at startup:
+```bash
+sudo journalctl -u tiny-dfr | grep -i "keyboard"
+```
+
+2. Manually check for keyboard backlight devices:
+```bash
+ls -la /sys/class/leds/ | grep -E "(kbd|keyboard)"
 ```
 
 ### Service Issues

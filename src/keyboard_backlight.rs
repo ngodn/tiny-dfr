@@ -142,7 +142,7 @@ impl KeyboardBacklightManager {
 }
 
 fn find_keyboard_backlight() -> Result<PathBuf> {
-    // Priority 1: T2 Mac specific path (your working solution)
+    // Priority 1: T2 Mac specific path
     let t2_path = PathBuf::from("/sys/class/leds/:white:kbd_backlight");
     if t2_path.exists() && t2_path.join("brightness").exists() {
         return Ok(t2_path);

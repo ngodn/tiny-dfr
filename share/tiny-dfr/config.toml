@@ -136,18 +136,21 @@ PrimaryLayerKeys = [
 
 # This key defines the contents of the media key layer
 MediaLayerKeys = [
+    { Icon = "omarchy",         Action = "Command_1"        },
     { Icon = "brightness_low",  Action = "BrightnessDown" },
     { Icon = "brightness_high", Action = "BrightnessUp"   },
-    { Icon = "mic_off",         Action = "MicMute"        },
-    { Icon = "search",          Action = "Search"         },
+#    { Icon = "mic_off",         Action = "MicMute"        },
     { Icon = "backlight_low",   Action = "IllumDown"      },
     { Icon = "backlight_high",  Action = "IllumUp"        },
-    { Icon = "fast_rewind",     Action = "PreviousSong"   },
+#    { Icon = "fast_rewind",     Action = "PreviousSong"   },
     { Icon = "play_pause",      Action = "PlayPause"      },
-    { Icon = "fast_forward",    Action = "NextSong"       },
+#    { Icon = "fast_forward",    Action = "NextSong"       },
     { Icon = "volume_off",      Action = "Mute"           },
     { Icon = "volume_down",     Action = "VolumeDown"     },
-    { Icon = "volume_up",       Action = "VolumeUp"       }
+    { Icon = "volume_up",       Action = "VolumeUp"       },
+    { Icon = "bolt",         Action = "Command_4"        },
+    { Icon = "capture",         Action = "Command_2"        },
+    { Icon = "apps",          Action = "Command_3"         }
 
     # Example with XDG icons (requires `breeze-dark` theme installed):
     # { Icon = "brightness-low",       Theme = "breeze-dark", Action = "BrightnessDown" },

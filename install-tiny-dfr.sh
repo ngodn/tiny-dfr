@@ -49,16 +49,17 @@ echo "Installing tiny-dfr..."
 sudo systemctl stop tiny-dfr 2>/dev/null || true
 sudo cp target/release/tiny-dfr /usr/bin/
 sudo mkdir -p /usr/share/tiny-dfr
-sudo cp share/tiny-dfr/config.toml /usr/share/tiny-dfr/
+sudo cp share/tiny-dfr/* /usr/share/tiny-dfr/
 sudo cp etc/systemd/system/tiny-dfr.service /etc/systemd/system/
 
 # Setup systemd service
 sudo systemctl daemon-reload
 sudo systemctl enable tiny-dfr
 
-# Copy config for customization
+# Copy config and commands for customization
 sudo mkdir -p /etc/tiny-dfr
 sudo cp /usr/share/tiny-dfr/config.toml /etc/tiny-dfr/config.toml
+sudo cp /usr/share/tiny-dfr/commands.toml /etc/tiny-dfr/commands.toml
 
 # Set MediaLayerDefault = true
 echo "Setting MediaLayerDefault = true in config..."
