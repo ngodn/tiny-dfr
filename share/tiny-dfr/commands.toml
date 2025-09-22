@@ -1,0 +1,14 @@
+# commands.toml - Command definitions for tiny-dfr
+# Copy this file to /etc/tiny-dfr/commands.toml and edit to customize your commands
+
+# Example commands - you can define up to Command_99
+Command_1 = "omarchy-menu"
+Command_2 = "uwsm app -- alacritty"
+Command_3 = "omarchy-menu apps"
+Command_4 = "omarchy-menu trigger"
+# ...
+Command_99 = "code"
+
+# Add more commands as needed:
+# Command_11 = "your-command-here"
+# Command_12 = "another-command --with-args"

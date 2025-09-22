@@ -46,7 +46,7 @@ mod pixel_shift;
 
 use crate::config::ConfigManager;
 use backlight::BacklightManager;
-use config::{ButtonConfig, Config};
+use config::{ButtonConfig, Config, ButtonAction};
 use display::DrmBackend;
 use keyboard_backlight::KeyboardBacklightManager;
 use pixel_shift::{PixelShiftManager, PIXEL_SHIFT_WIDTH_PX};
@@ -98,7 +98,7 @@ struct Button {
     image: ButtonImage,
     changed: bool,
     active: bool,
-    action: Key,
+    action: ButtonAction,
 }
 
 fn try_load_svg(path: &str) -> Result<ButtonImage> {
@@ -259,7 +259,7 @@ impl Button {
             panic!("Invalid config, a button must have either Text, Icon or Time")
         }
     }
-    fn new_text(text: String, action: Key) -> Button {
+    fn new_text(text: String, action: ButtonAction) -> Button {
         Button {
             action,
             active: false,
@@ -267,7 +267,7 @@ impl Button {
             image: ButtonImage::Text(text),
         }
     }
-    fn new_icon(path: impl AsRef<str>, theme: Option<impl AsRef<str>>, action: Key) -> Button {
+    fn new_icon(path: impl AsRef<str>, theme: Option<impl AsRef<str>>, action: ButtonAction) -> Button {
         let image = try_load_image(path, theme).expect("failed to load icon");
         Button {
             action,
@@ -282,7 +282,7 @@ impl Button {
         }
         panic!("failed to load icon");
     }
-    fn new_battery(action: Key, battery: String, battery_mode: String, theme: Option<impl AsRef<str>>) -> Button {
+    fn new_battery(action: ButtonAction, battery: String, battery_mode: String, theme: Option<impl AsRef<str>>) -> Button {
         let bolt = Self::load_battery_image("bolt", theme.as_ref());
         let mut plain = Vec::new();
         let mut charging = Vec::new();
@@ -315,7 +315,7 @@ impl Button {
         }
     }
 
-    fn new_time(action: Key, format: &str, locale_str: Option<&str>) -> Button {
+    fn new_time(action: ButtonAction, format: &str, locale_str: Option<&str>) -> Button {
         let format_str = if format == "24hr" {
             "%H:%M    %a %-e %b"
         } else if format == "12hr" {
@@ -437,7 +437,7 @@ impl Button {
             }
         }
     }
-    fn set_active<F>(&mut self, uinput: &mut UInputHandle<F>, active: bool)
+    fn set_active<F>(&mut self, uinput: &mut UInputHandle<F>, config: &Config, active: bool)
     where
         F: AsRawFd,
     {
@@ -445,7 +445,7 @@ impl Button {
             self.active = active;
             self.changed = true;
 
-            toggle_key(uinput, self.action, active as i32);
+            handle_button_action(uinput, &self.action, config, active);
         }
     }
     fn set_backround_color(&self, c: &Context, color: f64) {
@@ -724,6 +724,191 @@ where
     );
 }
 
+fn handle_button_action<F>(uinput: &mut UInputHandle<F>, action: &ButtonAction, config: &Config, active: bool)
+where
+    F: AsRawFd,
+{
+    match action {
+        ButtonAction::Key(key) => {
+            toggle_key(uinput, *key, active as i32);
+        }
+        ButtonAction::Command(command_id) => {
+            if active {
+                execute_command(command_id, config);
+            }
+        }
+    }
+}
+
+fn execute_command(command_id: &str, config: &Config) {
+    if let Some(command) = config.commands.get(command_id) {
+        // Execute command in the background with user environment
+        std::thread::spawn({
+            let command = command.clone();
+            move || {
+                // Try direct execution with full path
+                println!("Executing command: {}", command);
+
+                // Execute command as user with full login shell environment
+                if let Some(username) = detect_desktop_user() {
+                    let uid = get_user_id(&username).unwrap_or(1000);
+                    let runtime_dir = format!("/run/user/{}", uid);
+                    let wayland_display = detect_wayland_display(&runtime_dir).unwrap_or("wayland-1".to_string());
+
+                    // Use su with login shell and export display variables + full PATH
+                    let full_command = format!(
+                        "export PATH='/home/{}/.local/share/omarchy/bin:/home/{}/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/bin:/bin' DISPLAY=:0 WAYLAND_DISPLAY='{}' XDG_RUNTIME_DIR='{}'; {}",
+                        username, username, wayland_display, runtime_dir, command
+                    );
+
+                    // Use su with login shell to get full user environment
+                    let mut cmd = std::process::Command::new("/bin/su");
+                    cmd.args(["-c", &full_command, "-", &username]);
+
+                    if let Err(e) = cmd.spawn() {
+                        eprintln!("Failed to execute command '{}' as user '{}': {}", command, username, e);
+                    }
+                } else {
+                    // Fallback to basic execution
+                    let mut cmd = std::process::Command::new("sh");
+                    cmd.arg("-c").arg(&command);
+                    if let Err(e) = cmd.spawn() {
+                        eprintln!("Failed to execute command '{}': {}", command, e);
+                    }
+                }
+            }
+        });
+    } else {
+        eprintln!("Command '{}' not found in commands.toml", command_id);
+    }
+}
+
+fn detect_desktop_user() -> Option<String> {
+    // Method 1: Check SUDO_USER if running via sudo
+    if let Ok(user) = std::env::var("SUDO_USER") {
+        return Some(user);
+    }
+
+    // Method 2: Check loginctl for active graphical sessions (works for both X11 and Wayland)
+    if let Ok(output) = std::process::Command::new("loginctl")
+        .args(&["list-sessions", "--no-legend"])
+        .output() {
+        if let Ok(sessions) = String::from_utf8(output.stdout) {
+            for line in sessions.lines() {
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if parts.len() >= 4 && parts[3] == "seat0" && parts[2] != "root" {
+                    // Check if this session has a graphical environment
+                    if let Ok(session_output) = std::process::Command::new("loginctl")
+                        .args(&["show-session", parts[0], "-p", "Type"])
+                        .output() {
+                        if let Ok(session_info) = String::from_utf8(session_output.stdout) {
+                            if session_info.contains("Type=wayland") || session_info.contains("Type=x11") {
+                                return Some(parts[2].to_string());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Method 3: Check who owns the Wayland runtime directory
+    if let Ok(entries) = std::fs::read_dir("/run/user") {
+        for entry in entries.flatten() {
+            if let Some(uid_str) = entry.file_name().to_str() {
+                if let Ok(uid) = uid_str.parse::<u32>() {
+                    if uid >= 1000 && uid < 65534 { // Regular user UID range
+                        let wayland_socket = entry.path().join("wayland-0");
+                        if wayland_socket.exists() {
+                            // Get username from UID
+                            if let Ok(output) = std::process::Command::new("getent")
+                                .args(&["passwd", uid_str])
+                                .output() {
+                                if let Ok(passwd_line) = String::from_utf8(output.stdout) {
+                                    if let Some(username) = passwd_line.split(':').next() {
+                                        return Some(username.to_string());
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    None
+}
+
+fn get_user_id(username: &str) -> Option<u32> {
+    if let Ok(output) = std::process::Command::new("id")
+        .args(&["-u", username])
+        .output() {
+        if let Ok(uid_str) = String::from_utf8(output.stdout) {
+            return uid_str.trim().parse().ok();
+        }
+    }
+    None
+}
+
+fn expand_user_path(username: &str) -> Result<String, std::io::Error> {
+    use std::fs;
+
+    let mut paths = vec![
+        "/usr/local/bin".to_string(),
+        "/usr/bin".to_string(),
+        "/bin".to_string(),
+    ];
+
+    // Add user's local bin
+    paths.insert(0, format!("/home/{}/.local/bin", username));
+
+    // Expand .local/share/*/bin directories
+    let local_share_path = format!("/home/{}/.local/share", username);
+    println!("Expanding path, checking: {}", local_share_path);
+
+    match fs::read_dir(&local_share_path) {
+        Ok(entries) => {
+            for entry in entries.flatten() {
+                if let Ok(file_type) = entry.file_type() {
+                    if file_type.is_dir() {
+                        let bin_path = entry.path().join("bin");
+                        println!("Checking bin path: {:?}", bin_path);
+                        if bin_path.exists() {
+                            let bin_path_str = bin_path.to_string_lossy().to_string();
+                            println!("Found bin directory: {}", bin_path_str);
+                            paths.insert(1, bin_path_str);
+                        }
+                    }
+                }
+            }
+        }
+        Err(e) => {
+            println!("Failed to read {}: {}", local_share_path, e);
+            return Err(e);
+        }
+    }
+
+    Ok(paths.join(":"))
+}
+
+fn detect_wayland_display(runtime_dir: &str) -> Option<String> {
+    use std::fs;
+
+    // Check for wayland-* sockets in the runtime directory
+    if let Ok(entries) = fs::read_dir(runtime_dir) {
+        for entry in entries.flatten() {
+            if let Some(name) = entry.file_name().to_str() {
+                if name.starts_with("wayland-") && !name.ends_with(".lock") {
+                    return Some(name.to_string());
+                }
+            }
+        }
+    }
+
+    None
+}
+
 fn main() {
     let mut drm = DrmBackend::open_card().unwrap();
     let (height, width) = drm.mode().size();
@@ -774,14 +959,8 @@ fn real_main(drm: &mut DrmBackend) {
     
     let mut pixel_shift = PixelShiftManager::new();
 
-    // drop privileges to input and video group
-    let groups = ["input", "video"];
-
-    PrivDrop::default()
-        .user("nobody")
-        .group_list(&groups)
-        .apply()
-        .unwrap_or_else(|e| panic!("Failed to drop privileges: {}", e));
+    // Keep running as root to allow command execution
+    // Note: Privilege dropping disabled to allow access to user files for command execution
 
     let mut surface =
         ImageSurface::create(Format::ARgb32, db_width as i32, db_height as i32).unwrap();
@@ -814,7 +993,9 @@ fn real_main(drm: &mut DrmBackend) {
     uinput.set_evbit(EventKind::Key).unwrap();
     for layer in &layers {
         for button in &layer.buttons {
-            uinput.set_keybit(button.1.action).unwrap();
+            if let ButtonAction::Key(key) = button.1.action {
+                uinput.set_keybit(key).unwrap();
+            }
         }
     }
     let mut dev_name_c = [0 as c_char; 80];
@@ -937,15 +1118,15 @@ fn real_main(drm: &mut DrmBackend) {
                                 touches.insert(dn.seat_slot(), (active_layer, btn));
                                 
                                 // Get the button action before borrowing layers mutably
-                                let button_action = layers[active_layer].buttons[btn].1.action;
+                                let button_action = &layers[active_layer].buttons[btn].1.action;
                                 
                                 // Handle keyboard backlight actions directly
                                 let handled_by_keyboard_backlight = if cfg.keyboard_brightness_enabled {
                                     match button_action {
-                                        Key::IllumUp => {
+                                        ButtonAction::Key(Key::IllumUp) => {
                                             kbd_backlight.increase_brightness()
                                         }
-                                        Key::IllumDown => {
+                                        ButtonAction::Key(Key::IllumDown) => {
                                             kbd_backlight.decrease_brightness()
                                         }
                                         _ => false
@@ -958,7 +1139,7 @@ fn real_main(drm: &mut DrmBackend) {
                                 if !handled_by_keyboard_backlight {
                                     layers[active_layer].buttons[btn]
                                         .1
-                                        .set_active(&mut uinput, true);
+                                        .set_active(&mut uinput, &cfg, true);
                                 } else {
                                     // Show visual feedback for keyboard backlight buttons (without key event)
                                     layers[active_layer].buttons[btn].1.active = true;
@@ -979,12 +1160,12 @@ fn real_main(drm: &mut DrmBackend) {
                                 .is_some();
                             
                             // Check if this is a keyboard backlight button
-                            let button_action = layers[layer].buttons[btn].1.action;
-                            let is_kbd_backlight_button = cfg.keyboard_brightness_enabled && 
-                                (button_action == Key::IllumUp || button_action == Key::IllumDown);
+                            let button_action = &layers[layer].buttons[btn].1.action;
+                            let is_kbd_backlight_button = cfg.keyboard_brightness_enabled &&
+                                matches!(button_action, ButtonAction::Key(Key::IllumUp) | ButtonAction::Key(Key::IllumDown));
                             
                             if !is_kbd_backlight_button {
-                                layers[layer].buttons[btn].1.set_active(&mut uinput, hit);
+                                layers[layer].buttons[btn].1.set_active(&mut uinput, &cfg, hit);
                             } else {
                                 // Handle visual feedback for keyboard backlight buttons (without key event)
                                 layers[layer].buttons[btn].1.active = hit;
@@ -998,12 +1179,12 @@ fn real_main(drm: &mut DrmBackend) {
                             let (layer, btn) = *touches.get(&up.seat_slot()).unwrap();
                             
                             // Check if this was a keyboard backlight button
-                            let button_action = layers[layer].buttons[btn].1.action;
-                            let is_kbd_backlight_button = cfg.keyboard_brightness_enabled && 
-                                (button_action == Key::IllumUp || button_action == Key::IllumDown);
-                            
+                            let button_action = &layers[layer].buttons[btn].1.action;
+                            let is_kbd_backlight_button = cfg.keyboard_brightness_enabled &&
+                                matches!(button_action, ButtonAction::Key(Key::IllumUp) | ButtonAction::Key(Key::IllumDown));
+
                             if !is_kbd_backlight_button {
-                                layers[layer].buttons[btn].1.set_active(&mut uinput, false);
+                                layers[layer].buttons[btn].1.set_active(&mut uinput, &cfg, false);
                             } else {
                                 // Reset visual state for keyboard backlight buttons
                                 layers[layer].buttons[btn].1.active = false;

@@ -8,10 +8,18 @@ use nix::{
     errno::Errno,
     sys::inotify::{AddWatchFlags, InitFlags, Inotify, InotifyEvent, WatchDescriptor},
 };
-use serde::Deserialize;
-use std::{fs::read_to_string, os::fd::AsFd};
+use serde::{Deserialize, Deserializer};
+use std::{fs::read_to_string, os::fd::AsFd, collections::HashMap};
 
 const USER_CFG_PATH: &str = "/etc/tiny-dfr/config.toml";
+const USER_COMMANDS_PATH: &str = "/etc/tiny-dfr/commands.toml";
+
+#[derive(Deserialize, Debug, Clone, PartialEq)]
+#[serde(untagged)]
+pub enum ButtonAction {
+    Key(Key),
+    Command(String), // Command_1, Command_2, etc.
+}
 
 pub struct Config {
     pub show_button_outlines: bool,
@@ -21,6 +29,7 @@ pub struct Config {
     pub active_brightness: u32,
     pub keyboard_brightness_step: u32,
     pub keyboard_brightness_enabled: bool,
+    pub commands: HashMap<String, String>,
 }
 
 #[derive(Deserialize)]
@@ -48,8 +57,28 @@ pub struct ButtonConfig {
     pub time: Option<String>,
     pub battery: Option<String>,
     pub locale: Option<String>,
-    pub action: Key,
+    pub action: ButtonAction,
     pub stretch: Option<usize>,
+}
+
+fn load_commands() -> HashMap<String, String> {
+    let mut commands = HashMap::new();
+
+    // Load base commands from /usr/share/tiny-dfr/commands.toml
+    if let Ok(content) = read_to_string("/usr/share/tiny-dfr/commands.toml") {
+        if let Ok(base_commands) = toml::from_str::<HashMap<String, String>>(&content) {
+            commands.extend(base_commands);
+        }
+    }
+
+    // Override with user commands from /etc/tiny-dfr/commands.toml
+    if let Ok(content) = read_to_string(USER_COMMANDS_PATH) {
+        if let Ok(user_commands) = toml::from_str::<HashMap<String, String>>(&content) {
+            commands.extend(user_commands);
+        }
+    }
+
+    commands
 }
 
 fn load_font(name: &str) -> FontFace {
@@ -96,7 +125,7 @@ fn load_config(width: u16) -> (Config, [FunctionLayer; 2]) {
                     icon: None,
                     text: Some("esc".into()),
                     theme: None,
-                    action: Key::Esc,
+                    action: ButtonAction::Key(Key::Esc),
                     stretch: None,
                     time: None,
                     locale: None,
@@ -120,6 +149,7 @@ fn load_config(width: u16) -> (Config, [FunctionLayer; 2]) {
         active_brightness: base.active_brightness.unwrap(),
         keyboard_brightness_step: base.keyboard_brightness_step.unwrap_or(32),
         keyboard_brightness_enabled: base.keyboard_brightness_enabled.unwrap_or(true),
+        commands: load_commands(),
     };
     (cfg, layers)
 }
