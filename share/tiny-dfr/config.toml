@@ -57,6 +57,12 @@ KeyboardBrightnessStep = 1466
 # Buttons can be made larger by setting the optional Stretch field
 # to a number greater than 1 (which means the button will take up
 # that many button spaces).
+# ShowButtonOutlines can be set per button to override the global setting.
+# ButtonOutlinesColor can be set to customize outline colors per button.
+# Color formats supported:
+#   - Single grayscale value: ButtonOutlinesColor = 0.5
+#   - RGB array: ButtonOutlinesColor = [1.0, 0.5, 0.0] (orange)
+#   - Values range from 0.0 (black) to 1.0 (white/full color)
 PrimaryLayerKeys = [
     # Action defines the key code to send when the button is pressed
     # Text defines the button label
@@ -136,9 +142,9 @@ PrimaryLayerKeys = [
 
 # This key defines the contents of the media key layer
 MediaLayerKeys = [
-    { Icon = "omarchy", Action = "Command_1", ShowButtonOutlines = false },
+    { Icon = "omarchy", Action = "Command_1", ShowButtonOutlines = false, ButtonOutlinesColor = 0.0 },
     { Battery = "both", Action = "Battery", ShowButtonOutlines = true },
-    { Time = "%I:%M%P %-e/%m", Action = "Time", Stretch = 2, ShowButtonOutlines = true },
+    { Time = "%I:%M%P %-e/%m", Action = "Time", Stretch = 2, ShowButtonOutlines = true, ButtonOutlinesColor = [0.2, 0.2, 0.2] },
     { Icon = "brightness_low", Action = "BrightnessDown", ShowButtonOutlines = false },
     { Icon = "brightness_high", Action = "BrightnessUp", ShowButtonOutlines = false },
     #    { Icon = "mic_off",         Action = "MicMute"        },
@@ -157,6 +163,11 @@ MediaLayerKeys = [
     # Example with XDG icons (requires `breeze-dark` theme installed):
     # { Icon = "brightness-low",       Theme = "breeze-dark", Action = "BrightnessDown" },
     # { Icon = "brightness-high",      Theme = "breeze-dark", Action = "BrightnessUp"   },
+
+    # Examples of custom outline colors:
+    # { Icon = "some-icon", Action = "SomeAction", ShowButtonOutlines = true, ButtonOutlinesColor = 0.8 }
+    # { Icon = "another-icon", Action = "AnotherAction", ShowButtonOutlines = true, ButtonOutlinesColor = [1.0, 0.0, 0.0] }
+    # { Text = "Custom", Action = "CustomKey", ShowButtonOutlines = true, ButtonOutlinesColor = [0.2, 0.8, 1.0] }
     # { Icon = "microphone",           Theme = "breeze-dark", Action = "MicMute"        },
     # { Icon = "search",               Theme = "breeze-dark", Action = "Search"         },
     # { Icon = "redshift-status-day",  Theme = "breeze-dark", Action = "IllumDown"      },

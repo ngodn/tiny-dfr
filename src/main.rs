@@ -46,7 +46,7 @@ mod pixel_shift;
 
 use crate::config::ConfigManager;
 use backlight::BacklightManager;
-use config::{ButtonConfig, Config, ButtonAction};
+use config::{ButtonConfig, Config, ButtonAction, ButtonColor};
 use display::DrmBackend;
 use keyboard_backlight::KeyboardBacklightManager;
 use pixel_shift::{PixelShiftManager, PIXEL_SHIFT_WIDTH_PX};
@@ -100,6 +100,7 @@ struct Button {
     active: bool,
     action: ButtonAction,
     show_outline: Option<bool>,
+    outline_color: Option<ButtonColor>,
 }
 
 fn try_load_svg(path: &str) -> Result<ButtonImage> {
@@ -261,6 +262,7 @@ impl Button {
         };
 
         button.show_outline = cfg.show_button_outlines;
+        button.outline_color = cfg.button_outlines_color;
         button
     }
     fn new_text(text: String, action: ButtonAction) -> Button {
@@ -270,6 +272,7 @@ impl Button {
             changed: false,
             image: ButtonImage::Text(text),
             show_outline: None,
+            outline_color: None,
         }
     }
     fn new_icon(path: impl AsRef<str>, theme: Option<impl AsRef<str>>, action: ButtonAction) -> Button {
@@ -280,6 +283,7 @@ impl Button {
             active: false,
             changed: false,
             show_outline: None,
+            outline_color: None,
         }
     }
     fn load_battery_image(icon: &str, theme: Option<impl AsRef<str>>) -> Handle {
@@ -319,6 +323,7 @@ impl Button {
                 plain, bolt, charging
             }),
             show_outline: None,
+            outline_color: None,
         }
     }
 
@@ -343,6 +348,7 @@ impl Button {
             changed: false,
             image: ButtonImage::Time(format_items, locale),
             show_outline: None,
+            outline_color: None,
         }
     }
     fn render(
@@ -564,13 +570,7 @@ impl FunctionLayer {
                 + ((end - start - 1) as f64 * (virtual_button_width + BUTTON_SPACING_PX as f64))
                     .floor();
 
-            let color = if button.active {
-                BUTTON_COLOR_ACTIVE
-            } else if button.show_outline.unwrap_or(config.show_button_outlines) {
-                BUTTON_COLOR_INACTIVE
-            } else {
-                0.0
-            };
+            let show_outline = button.show_outline.unwrap_or(config.show_button_outlines);
             if !complete_redraw {
                 c.set_source_rgb(0.0, 0.0, 0.0);
                 c.rectangle(
@@ -581,7 +581,18 @@ impl FunctionLayer {
                 );
                 c.fill().unwrap();
             }
-            button.set_backround_color(&c, color);
+
+            if button.active {
+                button.set_backround_color(&c, BUTTON_COLOR_ACTIVE);
+            } else if show_outline {
+                if let Some(custom_color) = &button.outline_color {
+                    custom_color.set_cairo_source(&c);
+                } else {
+                    button.set_backround_color(&c, BUTTON_COLOR_INACTIVE);
+                }
+            } else {
+                button.set_backround_color(&c, 0.0);
+            }
             // draw box with rounded corners
             c.new_sub_path();
             let left = left_edge + radius;

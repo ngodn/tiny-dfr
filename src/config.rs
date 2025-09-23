@@ -11,6 +11,22 @@ use nix::{
 use serde::{Deserialize, Deserializer};
 use std::{fs::read_to_string, os::fd::AsFd, collections::HashMap};
 
+#[derive(Deserialize, Debug, Clone)]
+#[serde(untagged)]
+pub enum ButtonColor {
+    Grayscale(f64),
+    Rgb([f64; 3]),
+}
+
+impl ButtonColor {
+    pub fn set_cairo_source(&self, c: &cairo::Context) {
+        match self {
+            ButtonColor::Grayscale(gray) => c.set_source_rgb(*gray, *gray, *gray),
+            ButtonColor::Rgb([r, g, b]) => c.set_source_rgb(*r, *g, *b),
+        }
+    }
+}
+
 const USER_CFG_PATH: &str = "/etc/tiny-dfr/config.toml";
 const USER_COMMANDS_PATH: &str = "/etc/tiny-dfr/commands.toml";
 const USER_ENV_PATH: &str = "/etc/tiny-dfr/user-env.toml";
@@ -77,6 +93,7 @@ pub struct ButtonConfig {
     pub action: ButtonAction,
     pub stretch: Option<usize>,
     pub show_button_outlines: Option<bool>,
+    pub button_outlines_color: Option<ButtonColor>,
 }
 
 fn load_commands() -> HashMap<String, String> {
@@ -158,6 +175,7 @@ fn load_config(width: u16) -> (Config, [FunctionLayer; 2]) {
                     locale: None,
                     battery: None,
                     show_button_outlines: None,
+                    button_outlines_color: None,
                 },
             );
         }
