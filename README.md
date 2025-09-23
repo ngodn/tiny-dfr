@@ -1,26 +1,23 @@
-# tiny-dfr
+# Enhanced tiny-dfr
 
-The most basic dynamic function row daemon possible for T2 MacBooks (MacBook Pro 16,1 and other T2 models).
+The most basic dynamic function row daemon possible for macbook touchbars
 
 ## Overview
 
-tiny-dfr provides customizable Touch Bar functionality on T2 MacBooks running Linux. By default, the Touch Bar works in the same mode as Windows Bootcamp, but tiny-dfr allows you to customize it with your own layouts and functions.
+this enhanced iny-dfr provides customizable Touch Bar functionality on macbooks running arch linux with Omarchy specifically, thou might support other distros as well. By default, the Touch Bar works in the same mode as Windows Bootcamp, but tiny-dfr allows you to customize it with your own layouts and functions.
 
 ### Features
 - Customizable Touch Bar layouts and functions
 - **Hardware keyboard backlight control** - Automatically detects and controls keyboard backlight on supported MacBooks
 - **Command execution** - Execute custom shell commands and applications from Touch Bar buttons
+- **Per-button outline customization** - Individual control over button outline visibility and colors
 - Icon themes and customization
 - Systemd integration for automatic startup
-
-**Inspired by**: [T2 Linux Wiki - Adding support for customisable Touch Bar](https://wiki.t2linux.org/guides/postinstall/#adding-support-for-customisable-touch-bar)
 
 ## Prerequisites
 
 ### System Requirements
-- T2 MacBook (MacBook Pro 16,1, MacBook Air, etc.)
-- Linux with T2 kernel support
-- Required kernel modules: `apple-bce`, `hid-appletb-kbd`, `hid-appletb-bl`
+- Required kernel modules for T2: `apple-bce`, `hid-appletb-kbd`, `hid-appletb-bl`
 
 ### Dependencies
 - cairo
@@ -69,6 +66,8 @@ The config file allows you to customize:
 - Icon sets and themes
 - Key bindings and functions
 - Display settings
+- **Per-button outline customization** - Control visibility and colors of button outlines individually
+- **Custom button outline colors** - Use grayscale or RGB colors for unique button styling
 
 See the config file comments for detailed options.
 
@@ -79,7 +78,7 @@ sudo systemctl restart tiny-dfr
 
 ## Command Execution
 
-tiny-dfr supports executing custom shell commands and applications from Touch Bar buttons using the `Command_X` action system.
+enhanced tiny-dfr supports executing custom shell commands and applications from Touch Bar buttons using the `Command_X` action system.
 
 ### Configuration
 
@@ -112,24 +111,60 @@ MediaLayerKeys = [
 
 **Note**: Command execution has been tested on Arch Linux with Omarchy. Other distributions and desktop environments may require additional configuration.
 
-### Supported Command Types
+## Button Outline Customization
 
-- **GUI applications**: `firefox`, `code`, `nautilus`
-- **Terminal applications**: `alacritty`, `terminal commands`
-- **System utilities**: `rofi -show drun`, `walker -p "Launch…"`
-- **Custom scripts**: Any executable in your PATH or absolute path
+tiny-dfr supports advanced per-button outline customization, allowing you to create visually distinct button categories with custom colors and visibility settings.
+
+### Per-Button Outline Control
+
+You can control outline visibility for individual buttons, overriding the global `ShowButtonOutlines` setting:
+
+```toml
+MediaLayerKeys = [
+    { Icon = "omarchy", Action = "Command_1", ShowButtonOutlines = false },
+    { Battery = "both", Action = "Battery", ShowButtonOutlines = true },
+    { Time = "%I:%M%P", Action = "Time", ShowButtonOutlines = true },
+]
+```
+
+### Custom Outline Colors
+
+Each button can have its own outline color using the `ButtonOutlinesColor` field:
+
+```toml
+MediaLayerKeys = [
+    # Grayscale color (0.0 = black, 1.0 = white)
+    { Icon = "some-icon", Action = "SomeAction", ShowButtonOutlines = true, ButtonOutlinesColor = 0.5 },
+
+    # RGB color array [red, green, blue] (0.0 to 1.0 range)
+    { Time = "%I:%M%P", Action = "Time", ShowButtonOutlines = true, ButtonOutlinesColor = [0.2, 0.8, 1.0] },
+]
+```
+
+### Color Formats
+
+- **Grayscale**: Single floating-point value from 0.0 (black) to 1.0 (white)
+- **RGB**: Array of three floating-point values [red, green, blue], each from 0.0 to 1.0
+- **Fallback**: If no custom color is specified, uses the default outline color
+
+### Battery Button Colors
+
+The battery button automatically changes colors based on its state, regardless of custom outline colors:
+- **Charging**: Green outline/background
+- **Low battery (<10%)**: Red outline/background
+- **Normal**: Uses configured outline color or default gray
 
 ## Keyboard Backlight Support
 
 tiny-dfr automatically detects and controls hardware keyboard backlight on supported MacBooks. The system searches for keyboard backlight devices in the following priority order:
 
 1. **T2 Mac specific path**: `/sys/class/leds/:white:kbd_backlight`
-2. **SMC keyboard backlight**: `/sys/class/leds/smc::kbd_backlight`
+2. **Path with SMC prefix**: `/sys/class/leds/smc::kbd_backlight`
 3. **Generic search**: Any device in `/sys/class/leds/` containing "kbd" or "keyboard"
 
 ### Testing and Feedback Needed
 
-**Are you using a T1 or T2 MacBook?** We need your help to improve keyboard backlight compatibility!
+**Are you using a T1 or T2 MacBook?** I need your help to improve keyboard backlight compatibility!
 
 If keyboard backlight isn't working on your MacBook, please:
 1. Check what keyboard backlight devices exist on your system:
@@ -144,7 +179,7 @@ If keyboard backlight isn't working on your MacBook, please:
    - The path(s) found by the commands above
    - Whether you're using T1 or T2 hardware
 
-This helps us add support for more MacBook models!
+This helps me add support for more MacBook touchbar models if any!
 
 ## Troubleshooting
 
@@ -189,7 +224,7 @@ sudo tiny-dfr --check-config
 
 ## License
 
-tiny-dfr is licensed under the MIT license, as included in the [LICENSE](LICENSE) file.
+enhanced tiny-dfr has the same license like the original AsahiLinux/tiny-dfr which is under the MIT license, as included in the [LICENSE](LICENSE) file.
 
 * Copyright The Asahi Linux Contributors
 
