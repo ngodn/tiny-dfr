@@ -99,6 +99,7 @@ struct Button {
     changed: bool,
     active: bool,
     action: ButtonAction,
+    show_outline: Option<bool>,
 }
 
 fn try_load_svg(path: &str) -> Result<ButtonImage> {
@@ -243,7 +244,7 @@ fn get_battery_state(battery: &str) -> (u32, BatteryState) {
 
 impl Button {
     fn with_config(cfg: ButtonConfig) -> Button {
-        if let Some(text) = cfg.text {
+        let mut button = if let Some(text) = cfg.text {
             Button::new_text(text, cfg.action)
         } else if let Some(icon) = cfg.icon {
             Button::new_icon(&icon, cfg.theme, cfg.action)
@@ -257,7 +258,10 @@ impl Button {
             }
         } else {
             panic!("Invalid config, a button must have either Text, Icon or Time")
-        }
+        };
+
+        button.show_outline = cfg.show_button_outlines;
+        button
     }
     fn new_text(text: String, action: ButtonAction) -> Button {
         Button {
@@ -265,6 +269,7 @@ impl Button {
             active: false,
             changed: false,
             image: ButtonImage::Text(text),
+            show_outline: None,
         }
     }
     fn new_icon(path: impl AsRef<str>, theme: Option<impl AsRef<str>>, action: ButtonAction) -> Button {
@@ -274,6 +279,7 @@ impl Button {
             image,
             active: false,
             changed: false,
+            show_outline: None,
         }
     }
     fn load_battery_image(icon: &str, theme: Option<impl AsRef<str>>) -> Handle {
@@ -312,6 +318,7 @@ impl Button {
             image: ButtonImage::Battery(battery, battery_mode, BatteryImages {
                 plain, bolt, charging
             }),
+            show_outline: None,
         }
     }
 
@@ -335,6 +342,7 @@ impl Button {
             active: false,
             changed: false,
             image: ButtonImage::Time(format_items, locale),
+            show_outline: None,
         }
     }
     fn render(
@@ -558,7 +566,7 @@ impl FunctionLayer {
 
             let color = if button.active {
                 BUTTON_COLOR_ACTIVE
-            } else if config.show_button_outlines {
+            } else if button.show_outline.unwrap_or(config.show_button_outlines) {
                 BUTTON_COLOR_INACTIVE
             } else {
                 0.0

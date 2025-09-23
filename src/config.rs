@@ -76,6 +76,7 @@ pub struct ButtonConfig {
     pub locale: Option<String>,
     pub action: ButtonAction,
     pub stretch: Option<usize>,
+    pub show_button_outlines: Option<bool>,
 }
 
 fn load_commands() -> HashMap<String, String> {
@@ -156,6 +157,7 @@ fn load_config(width: u16) -> (Config, [FunctionLayer; 2]) {
                     time: None,
                     locale: None,
                     battery: None,
+                    show_button_outlines: None,
                 },
             );
         }

@@ -76,18 +76,18 @@ PrimaryLayerKeys = [
     # https://docs.rs/input-linux/latest/input_linux/enum.Key.html
     # Note that the escape key is not specified here, as it is added
     # automatically on Macs without a physical one
-    { Text = "F1",  Action = "F1"  },
-    { Text = "F2",  Action = "F2"  },
-    { Text = "F3",  Action = "F3"  },
-    { Text = "F4",  Action = "F4"  },
-    { Text = "F5",  Action = "F5"  },
-    { Text = "F6",  Action = "F6"  },
-    { Text = "F7",  Action = "F7"  },
-    { Text = "F8",  Action = "F8"  },
-    { Text = "F9",  Action = "F9"  },
+    { Text = "F1", Action = "F1" },
+    { Text = "F2", Action = "F2" },
+    { Text = "F3", Action = "F3" },
+    { Text = "F4", Action = "F4" },
+    { Text = "F5", Action = "F5" },
+    { Text = "F6", Action = "F6" },
+    { Text = "F7", Action = "F7" },
+    { Text = "F8", Action = "F8" },
+    { Text = "F9", Action = "F9" },
     { Text = "F10", Action = "F10" },
     { Text = "F11", Action = "F11" },
-    { Text = "F12", Action = "F12" }
+    { Text = "F12", Action = "F12" },
 
     # Example with Stretch:
     # # because most buttons have stretch 2, they behave as if they all had 1:
@@ -136,23 +136,23 @@ PrimaryLayerKeys = [
 
 # This key defines the contents of the media key layer
 MediaLayerKeys = [
-    { Icon = "omarchy",         Action = "Command_1"        },
-    { Battery = "both", Action = "Battery" },
-    { Time = "%I:%M%P %-e/%m",  Action = "Time", Stretch = 2},
-    { Icon = "brightness_low",  Action = "BrightnessDown" },
-    { Icon = "brightness_high", Action = "BrightnessUp"   },
-#    { Icon = "mic_off",         Action = "MicMute"        },
-    { Icon = "backlight_low",   Action = "IllumDown"      },
-    { Icon = "backlight_high",  Action = "IllumUp"        },
-#    { Icon = "fast_rewind",     Action = "PreviousSong"   },
-    { Icon = "play_pause",      Action = "PlayPause"      },
-#    { Icon = "fast_forward",    Action = "NextSong"       },
-#    { Icon = "volume_off",      Action = "Mute"           },
-    { Icon = "volume_down",     Action = "VolumeDown"     },
-    { Icon = "volume_up",       Action = "VolumeUp"       },
-    { Icon = "bolt",         Action = "Command_4"        },
-    { Icon = "terminal",         Action = "Command_2"        },
-    { Icon = "apps",          Action = "Command_3"         },
+    { Icon = "omarchy", Action = "Command_1", ShowButtonOutlines = false },
+    { Battery = "both", Action = "Battery", ShowButtonOutlines = true },
+    { Time = "%I:%M%P %-e/%m", Action = "Time", Stretch = 2, ShowButtonOutlines = true },
+    { Icon = "brightness_low", Action = "BrightnessDown", ShowButtonOutlines = false },
+    { Icon = "brightness_high", Action = "BrightnessUp", ShowButtonOutlines = false },
+    #    { Icon = "mic_off",         Action = "MicMute"        },
+    { Icon = "backlight_low", Action = "IllumDown", ShowButtonOutlines = false },
+    { Icon = "backlight_high", Action = "IllumUp", ShowButtonOutlines = false },
+    #    { Icon = "fast_rewind",     Action = "PreviousSong"   },
+    { Icon = "play_pause", Action = "PlayPause", ShowButtonOutlines = false },
+    #    { Icon = "fast_forward",    Action = "NextSong"       },
+    #    { Icon = "volume_off",      Action = "Mute"           },
+    { Icon = "volume_down", Action = "VolumeDown", ShowButtonOutlines = false },
+    { Icon = "volume_up", Action = "VolumeUp", ShowButtonOutlines = false },
+    { Icon = "bolt", Action = "Command_4", ShowButtonOutlines = false },
+    { Icon = "terminal", Action = "Command_2", ShowButtonOutlines = false },
+    { Icon = "apps", Action = "Command_3", ShowButtonOutlines = false },
 
     # Example with XDG icons (requires `breeze-dark` theme installed):
     # { Icon = "brightness-low",       Theme = "breeze-dark", Action = "BrightnessDown" },
