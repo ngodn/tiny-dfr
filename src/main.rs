@@ -941,6 +941,7 @@ fn real_main(drm: &mut DrmBackend) {
     let mut uinput = UInputHandle::new(OpenOptions::new().write(true).open("/dev/uinput").unwrap());
     let mut backlight = BacklightManager::new();
     let mut last_redraw_minute = Local::now().minute();
+    let mut last_battery_update_minute = Local::now().minute();
     let mut cfg_mgr = ConfigManager::new();
     let (mut cfg, mut layers) = cfg_mgr.load_config(width);
     
@@ -1045,12 +1046,13 @@ fn real_main(drm: &mut DrmBackend) {
             needs_complete_redraw = true;
             last_redraw_minute = current_minute;
         }
-        if layers[active_layer].displays_battery {
+        if layers[active_layer].displays_battery && (current_minute != last_battery_update_minute) {
             for button in &mut layers[active_layer].buttons {
                 if let ButtonImage::Battery(_, _, _) = button.1.image {
                     button.1.changed = true;
                 }
             }
+            last_battery_update_minute = current_minute;
         }
 
         if needs_complete_redraw || layers[active_layer].buttons.iter().any(|b| b.1.changed) {
