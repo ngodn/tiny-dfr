@@ -4,7 +4,7 @@ The most basic dynamic function row daemon possible for macbook touchbars
 
 ## Overview
 
-this enhanced iny-dfr provides customizable Touch Bar functionality on macbooks running arch linux with Omarchy specifically, thou might support other distros as well. By default, the Touch Bar works in the same mode as Windows Bootcamp, but tiny-dfr allows you to customize it with your own layouts and functions.
+this enhanced tiny-dfr provides customizable Touch Bar functionality on macbooks running arch linux with Omarchy specifically, thou might support other distros as well. By default, the Touch Bar works in the same mode as Windows Bootcamp, but tiny-dfr allows you to customize it with your own layouts and functions.
 
 ### Features
 - Customizable Touch Bar layouts and functions
@@ -50,9 +50,10 @@ The script will:
 ## Configuration
 
 ### Basic Setup
-1. Copy the default config:
+1. Copy the default config and commands:
 ```bash
 sudo cp /usr/share/tiny-dfr/config.toml /etc/tiny-dfr/config.toml
+sudo cp /usr/share/tiny-dfr/commands.toml /etc/tiny-dfr/commands.toml
 ```
 
 2. Edit the configuration:
@@ -81,6 +82,10 @@ sudo systemctl restart tiny-dfr
 enhanced tiny-dfr supports executing custom shell commands and applications from Touch Bar buttons using the `Command_X` action system.
 
 ### Configuration
+
+Commands are loaded with the following priority:
+- Base commands from `/usr/share/tiny-dfr/commands.toml`
+- User overrides from `/etc/tiny-dfr/commands.toml` (takes precedence)
 
 1. **Define commands** in `/etc/tiny-dfr/commands.toml`:
 ```toml
