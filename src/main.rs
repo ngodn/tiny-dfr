@@ -745,41 +745,65 @@ fn execute_command(command_id: &str, config: &Config) {
         // Execute command in the background with user environment
         std::thread::spawn({
             let command = command.clone();
+            let user_env = config.user_env.clone();
             move || {
-                // Try direct execution with full path
                 println!("Executing command: {}", command);
 
-                // Execute command as user with full login shell environment
                 if let Some(username) = detect_desktop_user() {
-                    let uid = get_user_id(&username).unwrap_or(1000);
-                    let runtime_dir = format!("/run/user/{}", uid);
-                    let wayland_display = detect_wayland_display(&runtime_dir).unwrap_or("wayland-1".to_string());
+                    // Use runuser with login shell - no password required, reads .bash_profile, .bashrc, etc.
+                    let mut cmd = std::process::Command::new("/usr/bin/runuser");
+                    cmd.args(["-l", &username, "-c", &command]);
 
-                    // Use su with login shell and export display variables + full PATH
-                    let full_command = format!(
-                        "export PATH='/home/{}/.local/share/omarchy/bin:/home/{}/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/bin:/bin' DISPLAY=:0 WAYLAND_DISPLAY='{}' XDG_RUNTIME_DIR='{}'; {}",
-                        username, username, wayland_display, runtime_dir, command
-                    );
+                    // Set essential environment variables for GUI apps
+                    if let Some(uid) = get_user_id(&username) {
+                        let runtime_dir = format!("/run/user/{}", uid);
+                        let home_dir = format!("/home/{}", username);
 
-                    // Use su with login shell to get full user environment
-                    let mut cmd = std::process::Command::new("/bin/su");
-                    cmd.args(["-c", &full_command, "-", &username]);
+                        // Set comprehensive PATH to include common user binary locations
+                        let enhanced_path = format!(
+                            "{}/.local/share/omarchy/bin:{}/.local/bin:{}/.config/nvm/versions/node/latest/bin:{}/.local/share/pnpm:/usr/local/sbin:/usr/local/bin:/usr/bin:/bin:/var/lib/flatpak/exports/bin",
+                            home_dir, home_dir, home_dir, home_dir
+                        );
+
+                        // Use user environment config if available, otherwise detect
+                        let wayland_display = if let Some(user_env) = &user_env {
+                            user_env.wayland_display.clone()
+                        } else {
+                            detect_wayland_display(&runtime_dir).unwrap_or_else(|| "wayland-1".to_string())
+                        };
+
+                        // Build command with environment variables embedded (to work with runuser -l)
+                        let env_command = format!(
+                            "export PATH='{}' DISPLAY=':0' WAYLAND_DISPLAY='{}' XDG_RUNTIME_DIR='{}'; {}",
+                            enhanced_path.clone(), wayland_display, runtime_dir, command
+                        );
+
+                        // Update command to use embedded environment
+                        cmd = std::process::Command::new("/usr/bin/runuser");
+                        cmd.args(["-l", &username, "-c", &env_command]);
+                    }
 
                     if let Err(e) = cmd.spawn() {
                         eprintln!("Failed to execute command '{}' as user '{}': {}", command, username, e);
+
+                        // Fallback to basic execution
+                        fallback_execution(&command);
                     }
                 } else {
-                    // Fallback to basic execution
-                    let mut cmd = std::process::Command::new("sh");
-                    cmd.arg("-c").arg(&command);
-                    if let Err(e) = cmd.spawn() {
-                        eprintln!("Failed to execute command '{}': {}", command, e);
-                    }
+                    fallback_execution(&command);
                 }
             }
         });
     } else {
         eprintln!("Command '{}' not found in commands.toml", command_id);
+    }
+}
+
+fn fallback_execution(command: &str) {
+    let mut cmd = std::process::Command::new("sh");
+    cmd.arg("-c").arg(command);
+    if let Err(e) = cmd.spawn() {
+        eprintln!("Failed to execute command '{}': {}", command, e);
     }
 }
 

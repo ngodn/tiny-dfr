@@ -13,12 +13,28 @@ use std::{fs::read_to_string, os::fd::AsFd, collections::HashMap};
 
 const USER_CFG_PATH: &str = "/etc/tiny-dfr/config.toml";
 const USER_COMMANDS_PATH: &str = "/etc/tiny-dfr/commands.toml";
+const USER_ENV_PATH: &str = "/etc/tiny-dfr/user-env.toml";
 
 #[derive(Deserialize, Debug, Clone, PartialEq)]
 #[serde(untagged)]
 pub enum ButtonAction {
     Key(Key),
     Command(String), // Command_1, Command_2, etc.
+}
+
+#[derive(Deserialize, Debug, Clone)]
+pub struct UserEnvironment {
+    pub username: String,
+    pub uid: u32,
+    pub home_dir: String,
+    pub runtime_dir: String,
+    pub wayland_display: String,
+    pub user_paths: String,
+}
+
+#[derive(Deserialize)]
+struct UserEnvConfig {
+    user_environment: UserEnvironment,
 }
 
 pub struct Config {
@@ -30,6 +46,7 @@ pub struct Config {
     pub keyboard_brightness_step: u32,
     pub keyboard_brightness_enabled: bool,
     pub commands: HashMap<String, String>,
+    pub user_env: Option<UserEnvironment>,
 }
 
 #[derive(Deserialize)]
@@ -79,6 +96,15 @@ fn load_commands() -> HashMap<String, String> {
     }
 
     commands
+}
+
+fn load_user_environment() -> Option<UserEnvironment> {
+    if let Ok(content) = read_to_string(USER_ENV_PATH) {
+        if let Ok(env_config) = toml::from_str::<UserEnvConfig>(&content) {
+            return Some(env_config.user_environment);
+        }
+    }
+    None
 }
 
 fn load_font(name: &str) -> FontFace {
@@ -150,6 +176,7 @@ fn load_config(width: u16) -> (Config, [FunctionLayer; 2]) {
         keyboard_brightness_step: base.keyboard_brightness_step.unwrap_or(32),
         keyboard_brightness_enabled: base.keyboard_brightness_enabled.unwrap_or(true),
         commands: load_commands(),
+        user_env: load_user_environment(),
     };
     (cfg, layers)
 }

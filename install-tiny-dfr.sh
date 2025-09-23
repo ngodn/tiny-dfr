@@ -25,7 +25,7 @@ fi
 # Install dependencies based on distro
 if command -v pacman &> /dev/null; then
     echo "Detected Arch-based system"
-    sudo pacman -Sy --noconfirm rust cargo cairo libinput freetype2 fontconfig librsvg
+    sudo pacman -S --noconfirm rust cargo cairo libinput freetype2 fontconfig librsvg
 elif command -v apt &> /dev/null; then
     echo "Detected Debian-based system"
     sudo apt update
@@ -56,10 +56,60 @@ sudo cp etc/systemd/system/tiny-dfr.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable tiny-dfr
 
+# Detect user environment for proper configuration
+echo "Detecting user environment..."
+CURRENT_USER=$(whoami)
+USER_HOME="/home/$CURRENT_USER"
+USER_UID=$(id -u $CURRENT_USER)
+RUNTIME_DIR="/run/user/$USER_UID"
+
+# Detect Wayland display
+WAYLAND_DISPLAY_VALUE="wayland-1"  # default
+if [ -d "$RUNTIME_DIR" ]; then
+    for socket in "$RUNTIME_DIR"/wayland-*; do
+        if [ -S "$socket" ] && [[ ! "$socket" == *.lock ]]; then
+            WAYLAND_DISPLAY_VALUE=$(basename "$socket")
+            break
+        fi
+    done
+fi
+
+# Detect user's actual PATH locations
+USER_PATHS=""
+for path_candidate in \
+    "$USER_HOME/.local/share/omarchy/bin" \
+    "$USER_HOME/.local/bin" \
+    "$USER_HOME/.config/nvm/versions/node/latest/bin" \
+    "$USER_HOME/.local/share/pnpm" \
+    "$USER_HOME/.cargo/bin" \
+    "$USER_HOME/.npm-global/bin" \
+    "$USER_HOME/bin"; do
+    if [ -d "$path_candidate" ]; then
+        USER_PATHS="$USER_PATHS:$path_candidate"
+    fi
+done
+
+echo "Detected user: $CURRENT_USER"
+echo "Detected UID: $USER_UID"
+echo "Detected Wayland display: $WAYLAND_DISPLAY_VALUE"
+echo "Detected user paths: $USER_PATHS"
+
 # Copy config and commands for customization
 sudo mkdir -p /etc/tiny-dfr
 sudo cp /usr/share/tiny-dfr/config.toml /etc/tiny-dfr/config.toml
 sudo cp /usr/share/tiny-dfr/commands.toml /etc/tiny-dfr/commands.toml
+
+# Create user-specific environment configuration
+sudo tee /etc/tiny-dfr/user-env.toml > /dev/null <<EOF
+# Auto-generated user environment configuration
+[user_environment]
+username = "$CURRENT_USER"
+uid = $USER_UID
+home_dir = "$USER_HOME"
+runtime_dir = "$RUNTIME_DIR"
+wayland_display = "$WAYLAND_DISPLAY_VALUE"
+user_paths = "$USER_PATHS"
+EOF
 
 # Set MediaLayerDefault = true
 echo "Setting MediaLayerDefault = true in config..."

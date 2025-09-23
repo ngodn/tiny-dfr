@@ -1,9 +1,50 @@
 [Unit]
 Description=Tiny Apple T2 and Silicon Macs Touch Bar daemon
-After=systemd-user-sessions.service getty@tty1.service plymouth-quit.service systemd-logind.service dev-tiny_dfr_display.device dev-tiny_dfr_backlight.device dev-tiny_dfr_display_backlight.device
+After=systemd-user-sessions.service systemd-logind.service dev-tiny_dfr_display.device dev-tiny_dfr_backlight.device dev-tiny_dfr_display_backlight.device
 BindsTo=dev-tiny_dfr_display.device dev-tiny_dfr_backlight.device dev-tiny_dfr_display_backlight.device
 
 [Service]
 User=root
 ExecStart=/usr/bin/tiny-dfr
 Restart=always
+
+# === CRITICAL: Disable security features that block login shell execution ===
+
+# Allow access to user home directories (needed for shell config files)
+ProtectHome=false
+
+# Don't isolate user namespace (su needs access to real user database)
+PrivateUsers=false
+
+# Allow SUID execution (needed for su command)
+RestrictSUIDSGID=false
+
+# Allow access to user information and session data
+ProtectSystem=false
+
+# === ENABLE: Features that support user session integration ===
+
+# Add supplementary groups for user access
+SupplementaryGroups=users
+
+# Preserve important session environment variables
+Environment="XDG_RUNTIME_DIR=/run/user"
+
+# Allow access to user session directories
+PrivateTmp=false
+
+# === SECURITY: Keep essential protections that don't interfere ===
+
+# Protect kernel features we don't need (but allow backlight access)
+# ProtectKernelTunables=true  # Disabled - tiny-dfr needs to write to /sys/class/backlight
+ProtectKernelModules=true
+ProtectControlGroups=true
+
+# Restrict network access (tiny-dfr doesn't need network)
+PrivateNetwork=true
+
+# Restrict capabilities to only what's needed
+CapabilityBoundingSet=CAP_SETUID CAP_SETGID CAP_DAC_OVERRIDE CAP_FOWNER
+
+[Install]
+WantedBy=multi-user.target
