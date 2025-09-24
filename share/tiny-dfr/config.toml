@@ -70,12 +70,7 @@ ExpandableTimeoutSeconds = 5
 # Buttons can be made larger by setting the optional Stretch field
 # to a number greater than 1 (which means the button will take up
 # that many button spaces).
-# ShowButtonOutlines can be set per button to override the global setting.
-# ButtonOutlinesColor can be set to customize outline colors per button.
-# Color formats supported:
-#   - Single grayscale value: ButtonOutlinesColor = 0.5
-#   - RGB array: ButtonOutlinesColor = [1.0, 0.5, 0.0] (orange)
-#   - Values range from 0.0 (black) to 1.0 (white/full color)
+
 PrimaryLayerKeys = [
     # Action defines the key code to send when the button is pressed
     # Text defines the button label
@@ -153,6 +148,13 @@ PrimaryLayerKeys = [
     # Button will turn green if battery is charging, and red if charge is <10% and is not charging.
 ]
 
+# ShowButtonOutlines can be set per button to override the global setting.
+# ButtonOutlinesColor can be set to customize outline colors per button.
+# Color formats supported:
+#   - Single grayscale value: ButtonOutlinesColor = 0.5
+#   - RGB array: ButtonOutlinesColor = [1.0, 0.5, 0.0] (orange)
+#   - Values range from 0.0 (black) to 1.0 (white/full color)
+
 # This key defines the contents of the media key layer
 MediaLayerKeys = [
     { Icon = "omarchy", Action = "Expand_Omarchy", ShowButtonOutlines = false, ButtonOutlinesColor = 0.0 },
@@ -172,8 +174,8 @@ MediaLayerKeys = [
     # Use this if want Icon only instead of text or both
     # { Icon = "plugin-hyprland", Action = "Hyprland_Expand_ActiveWindow", ShowButtonOutlines = true, ButtonOutlinesColor = [0.10196078431372549, 0.10588235294117647, 0.14901960784313725] , Stretch = 8},
 
-    { Icon = "bolt", Action = "Expand_Trigger", ShowButtonOutlines = false },
-    { Icon = "settings", Action = "Expand_Settings", ShowButtonOutlines = false },
+    { Icon = "bolt", Action = "Expand_Trigger", ShowButtonOutlines = false, ButtonOutlinesColor = 0.0 },
+    { Icon = "settings", Action = "Expand_Settings", ShowButtonOutlines = false, ButtonOutlinesColor = 0.0 },
 
     # { Icon = "omarchy", Action = "Command_1", ShowButtonOutlines = false, ButtonOutlinesColor = 0.0 },
     # { Battery = "both", Action = "Battery", ShowButtonOutlines = true },

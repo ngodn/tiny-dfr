@@ -985,14 +985,14 @@ fn handle_hyprland_expand(hyprland_expand_name: &str, config: &Config, navigatio
         });
 
         if let Some(matched_config) = matching_config {
-            // Create the button title based on configuration
+            // Create the button title based on configuration (for other buttons in the expand)
             let button_title = matched_config.button_title.as_deref().unwrap_or("title");
-            let window_text = active_window_info.get_text_by_button_title(button_title);
+            let _window_text = active_window_info.get_text_by_button_title(button_title);
 
-            // Create a dynamic back button showing the active window title
-            let mut window_button_config = ButtonConfig {
+            // Create a back button with "Back" text
+            let window_button_config = ButtonConfig {
                 icon: Some("back".to_string()), // Show back arrow icon
-                text: Some(window_text.clone()), // Show window title
+                text: Some("Back".to_string()), // Fixed: Show "Back" text instead of window title
                 theme: None,
                 time: None,
                 battery: None,
