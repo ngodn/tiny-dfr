@@ -39,4 +39,60 @@ Hyprland_Expand_ActiveWindow = [
             0.14901960784313725,
         ] },
     ] },
+
+    { Class = "google-chrome", LayerKeys = [
+        { Icon = "refresh", Action = "F5", ShowButtonOutlines = true, ButtonOutlinesColor = [
+            0.10196078431372549,
+            0.10588235294117647,
+            0.14901960784313725,
+        ] },
+        { Text = "History", Action = "KeyCombos_CTRL_H", ShowButtonOutlines = true, ButtonOutlinesColor = [
+            0.10196078431372549,
+            0.10588235294117647,
+            0.14901960784313725,
+        ] },
+        { Text = "Downloads", Action = "KeyCombos_CTRL_J", ShowButtonOutlines = true, ButtonOutlinesColor = [
+            0.10196078431372549,
+            0.10588235294117647,
+            0.14901960784313725,
+        ] },
+        { Text = "Print", Action = "KeyCombos_CTRL_P", ShowButtonOutlines = true, ButtonOutlinesColor = [
+            0.10196078431372549,
+            0.10588235294117647,
+            0.14901960784313725,
+        ] },
+        { Text = "Inspect", Action = "F12", ShowButtonOutlines = true, ButtonOutlinesColor = [
+            0.10196078431372549,
+            0.10588235294117647,
+            0.14901960784313725,
+        ] },
+    ] },
+
+    { Class = "Firefox", LayerKeys = [
+        { Icon = "refresh", Action = "F5", ShowButtonOutlines = true, ButtonOutlinesColor = [
+            0.10196078431372549,
+            0.10588235294117647,
+            0.14901960784313725,
+        ] },
+        { Text = "History", Action = "KeyCombos_CTRL_H", ShowButtonOutlines = true, ButtonOutlinesColor = [
+            0.10196078431372549,
+            0.10588235294117647,
+            0.14901960784313725,
+        ] },
+        { Text = "Downloads", Action = "KeyCombos_CTRL_J", ShowButtonOutlines = true, ButtonOutlinesColor = [
+            0.10196078431372549,
+            0.10588235294117647,
+            0.14901960784313725,
+        ] },
+        { Text = "Print", Action = "KeyCombos_CTRL_P", ShowButtonOutlines = true, ButtonOutlinesColor = [
+            0.10196078431372549,
+            0.10588235294117647,
+            0.14901960784313725,
+        ] },
+        { Text = "Inspect", Action = "F12", ShowButtonOutlines = true, ButtonOutlinesColor = [
+            0.10196078431372549,
+            0.10588235294117647,
+            0.14901960784313725,
+        ] },
+    ] },
 ]

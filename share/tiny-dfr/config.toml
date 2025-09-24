@@ -157,8 +157,8 @@ PrimaryLayerKeys = [
 
 # This key defines the contents of the media key layer
 MediaLayerKeys = [
-    { Icon = "omarchy", Action = "Expand_Omarchy", ShowButtonOutlines = false, ButtonOutlinesColor = 0.0 },
-    { Battery = "both", Action = "Battery", ShowButtonOutlines = true },
+    { Icon = "omarchy", Action = "Expand_Omarchy", ShowButtonOutlines = false, ButtonOutlinesColor = 0.0, Stretch = 1 },
+    { Battery = "both", Action = "Battery", ShowButtonOutlines = true, Stretch = 1 },
     { Time = "%I:%M%P %-e/%m", Action = "Time", Stretch = 2, ShowButtonOutlines = true, ButtonOutlinesColor = [
         0.2,
         0.2,
@@ -174,8 +174,8 @@ MediaLayerKeys = [
     # Use this if want Icon only instead of text or both
     # { Icon = "plugin-hyprland-icon", Action = "Hyprland_Expand_ActiveWindow", ShowButtonOutlines = true, ButtonOutlinesColor = [0.10196078431372549, 0.10588235294117647, 0.14901960784313725] , Stretch = 3},
 
-    { Icon = "bolt", Action = "Expand_Trigger", ShowButtonOutlines = false, ButtonOutlinesColor = 0.0 },
-    { Icon = "settings", Action = "Expand_Settings", ShowButtonOutlines = false, ButtonOutlinesColor = 0.0 },
+    { Icon = "bolt", Action = "Expand_Trigger", ShowButtonOutlines = false, ButtonOutlinesColor = 0.0, Stretch = 1 },
+    { Icon = "settings", Action = "Expand_Settings", ShowButtonOutlines = false, ButtonOutlinesColor = 0.0, Stretch = 1 },
 
     # { Icon = "omarchy", Action = "Command_1", ShowButtonOutlines = false, ButtonOutlinesColor = 0.0 },
     # { Battery = "both", Action = "Battery", ShowButtonOutlines = true },
