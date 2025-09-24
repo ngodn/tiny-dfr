@@ -46,6 +46,7 @@ mod icon_cache;
 mod keyboard_backlight;
 mod pixel_shift;
 mod system_monitor;
+mod user_cache;
 
 use crate::config::ConfigManager;
 use crate::battery_monitor::BatteryState;
@@ -1072,54 +1073,45 @@ where
 
 fn execute_command(command_id: &str, config: &Config) {
     if let Some(command) = config.commands.get(command_id) {
-        // Execute command in the background with user environment
+        // Execute command in the background with cached user environment
         std::thread::spawn({
             let command = command.clone();
             let user_env = config.user_env.clone();
             move || {
                 println!("Executing command: {}", command);
 
-                if let Some(username) = detect_desktop_user() {
+                // Use cached user environment for instant execution
+                if let Some(cached_env) = user_cache::get_cached_user_environment() {
                     // Use runuser with login shell - no password required, reads .bash_profile, .bashrc, etc.
                     let mut cmd = std::process::Command::new("/usr/bin/runuser");
-                    cmd.args(["-l", &username, "-c", &command]);
+                    cmd.args(["-l", &cached_env.username, "-c", &command]);
 
-                    // Set essential environment variables for GUI apps
-                    if let Some(uid) = get_user_id(&username) {
-                        let runtime_dir = format!("/run/user/{}", uid);
-                        let home_dir = format!("/home/{}", username);
+                    // Use user environment config if available, otherwise use cached detection
+                    let wayland_display = if let Some(user_env) = &user_env {
+                        user_env.wayland_display.clone()
+                    } else {
+                        cached_env.wayland_display.clone()
+                    };
 
-                        // Set comprehensive PATH to include common user binary locations
-                        let enhanced_path = format!(
-                            "{}/.local/share/omarchy/bin:{}/.local/bin:{}/.config/nvm/versions/node/latest/bin:{}/.local/share/pnpm:/usr/local/sbin:/usr/local/bin:/usr/bin:/bin:/var/lib/flatpak/exports/bin",
-                            home_dir, home_dir, home_dir, home_dir
-                        );
+                    // Build command with environment variables embedded (to work with runuser -l)
+                    let env_command = format!(
+                        "export PATH='{}' DISPLAY=':0' WAYLAND_DISPLAY='{}' XDG_RUNTIME_DIR='{}'; {}",
+                        cached_env.enhanced_path, wayland_display, cached_env.runtime_dir, command
+                    );
 
-                        // Use user environment config if available, otherwise detect
-                        let wayland_display = if let Some(user_env) = &user_env {
-                            user_env.wayland_display.clone()
-                        } else {
-                            detect_wayland_display(&runtime_dir).unwrap_or_else(|| "wayland-1".to_string())
-                        };
-
-                        // Build command with environment variables embedded (to work with runuser -l)
-                        let env_command = format!(
-                            "export PATH='{}' DISPLAY=':0' WAYLAND_DISPLAY='{}' XDG_RUNTIME_DIR='{}'; {}",
-                            enhanced_path.clone(), wayland_display, runtime_dir, command
-                        );
-
-                        // Update command to use embedded environment
-                        cmd = std::process::Command::new("/usr/bin/runuser");
-                        cmd.args(["-l", &username, "-c", &env_command]);
-                    }
+                    // Update command to use embedded environment
+                    cmd = std::process::Command::new("/usr/bin/runuser");
+                    cmd.args(["-l", &cached_env.username, "-c", &env_command]);
 
                     if let Err(e) = cmd.spawn() {
-                        eprintln!("Failed to execute command '{}' as user '{}': {}", command, username, e);
+                        eprintln!("Failed to execute command '{}' as user '{}': {}", command, cached_env.username, e);
 
                         // Fallback to basic execution
                         fallback_execution(&command);
                     }
                 } else {
+                    // Fallback if cache is not available
+                    eprintln!("User environment cache not available, using fallback execution");
                     fallback_execution(&command);
                 }
             }
@@ -1137,73 +1129,6 @@ fn fallback_execution(command: &str) {
     }
 }
 
-fn detect_desktop_user() -> Option<String> {
-    // Method 1: Check SUDO_USER if running via sudo
-    if let Ok(user) = std::env::var("SUDO_USER") {
-        return Some(user);
-    }
-
-    // Method 2: Check loginctl for active graphical sessions (works for both X11 and Wayland)
-    if let Ok(output) = std::process::Command::new("loginctl")
-        .args(&["list-sessions", "--no-legend"])
-        .output() {
-        if let Ok(sessions) = String::from_utf8(output.stdout) {
-            for line in sessions.lines() {
-                let parts: Vec<&str> = line.split_whitespace().collect();
-                if parts.len() >= 4 && parts[3] == "seat0" && parts[2] != "root" {
-                    // Check if this session has a graphical environment
-                    if let Ok(session_output) = std::process::Command::new("loginctl")
-                        .args(&["show-session", parts[0], "-p", "Type"])
-                        .output() {
-                        if let Ok(session_info) = String::from_utf8(session_output.stdout) {
-                            if session_info.contains("Type=wayland") || session_info.contains("Type=x11") {
-                                return Some(parts[2].to_string());
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    // Method 3: Check who owns the Wayland runtime directory
-    if let Ok(entries) = std::fs::read_dir("/run/user") {
-        for entry in entries.flatten() {
-            if let Some(uid_str) = entry.file_name().to_str() {
-                if let Ok(uid) = uid_str.parse::<u32>() {
-                    if uid >= 1000 && uid < 65534 { // Regular user UID range
-                        let wayland_socket = entry.path().join("wayland-0");
-                        if wayland_socket.exists() {
-                            // Get username from UID
-                            if let Ok(output) = std::process::Command::new("getent")
-                                .args(&["passwd", uid_str])
-                                .output() {
-                                if let Ok(passwd_line) = String::from_utf8(output.stdout) {
-                                    if let Some(username) = passwd_line.split(':').next() {
-                                        return Some(username.to_string());
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    None
-}
-
-fn get_user_id(username: &str) -> Option<u32> {
-    if let Ok(output) = std::process::Command::new("id")
-        .args(&["-u", username])
-        .output() {
-        if let Ok(uid_str) = String::from_utf8(output.stdout) {
-            return uid_str.trim().parse().ok();
-        }
-    }
-    None
-}
 
 fn expand_user_path(username: &str) -> Result<String, std::io::Error> {
     use std::fs;
@@ -1246,22 +1171,6 @@ fn expand_user_path(username: &str) -> Result<String, std::io::Error> {
     Ok(paths.join(":"))
 }
 
-fn detect_wayland_display(runtime_dir: &str) -> Option<String> {
-    use std::fs;
-
-    // Check for wayland-* sockets in the runtime directory
-    if let Ok(entries) = fs::read_dir(runtime_dir) {
-        for entry in entries.flatten() {
-            if let Some(name) = entry.file_name().to_str() {
-                if name.starts_with("wayland-") && !name.ends_with(".lock") {
-                    return Some(name.to_string());
-                }
-            }
-        }
-    }
-
-    None
-}
 
 fn main() {
     let mut drm = DrmBackend::open_card().unwrap();
@@ -1313,6 +1222,13 @@ fn real_main(drm: &mut DrmBackend) {
     }
     
     let mut pixel_shift = PixelShiftManager::new();
+
+    // Initialize performance optimizations
+    user_cache::initialize_user_environment_cache();
+    icon_cache::preload_common_icons();
+    let _battery_monitor = battery_monitor::BatteryMonitor::new("BAT0".to_string());
+    let _system_monitor = system_monitor::SystemMonitor::new();
+    icon_cache::start_background_preloader();
 
     // Keep running as root to allow command execution
     // Note: Privilege dropping disabled to allow access to user files for command execution
