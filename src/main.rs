@@ -37,14 +37,18 @@ use std::{
 use udev::MonitorBuilder;
 
 mod backlight;
+mod battery_monitor;
 mod config;
 mod display;
 mod fonts;
 mod hyprland;
+mod icon_cache;
 mod keyboard_backlight;
 mod pixel_shift;
+mod system_monitor;
 
 use crate::config::ConfigManager;
+use crate::battery_monitor::BatteryState;
 use backlight::BacklightManager;
 use config::{ButtonConfig, Config, ButtonAction, ButtonColor};
 use display::DrmBackend;
@@ -110,13 +114,6 @@ impl NavigationState {
         self.current_expandable.is_some() &&
         self.last_interaction_time.elapsed().as_secs() >= timeout_seconds as u64
     }
-}
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum BatteryState {
-    NotCharging,
-    Charging,
-    Low,
 }
 
 #[derive(Clone)]
@@ -188,12 +185,28 @@ fn try_load_png(path: impl AsRef<Path>) -> Result<ButtonImage> {
 
 fn try_load_image(name: impl AsRef<str>, theme: Option<impl AsRef<str>>) -> Result<ButtonImage> {
     let name = name.as_ref();
+    let theme_str = theme.as_ref().map(|s| s.as_ref());
+
+    // Try cache first for instant results
+    if let Some(cached_path) = icon_cache::get_icon_cached(name.to_string(), theme_str.map(|s| s.to_string())) {
+        // Load the image from the cached path
+        return match cached_path.extension().and_then(|s| s.to_str()) {
+            Some("png") => try_load_png(&cached_path),
+            Some("svg") => try_load_svg(cached_path.to_str().unwrap_or("")),
+            _ => Err(anyhow!("Unsupported file format")),
+        };
+    }
+
+    // Fallback to synchronous loading (for immediate needs)
+    try_load_image_sync(name, theme_str)
+}
+
+fn try_load_image_sync(name: &str, theme: Option<&str>) -> Result<ButtonImage> {
     let locations;
 
     // Load list of candidate locations
     if let Some(theme) = theme {
         // Freedesktop icons
-        let theme = theme.as_ref();
         let candidates = vec![
             lookup(name)
                 .with_cache()
@@ -265,6 +278,16 @@ fn find_battery_device() -> Option<String> {
 }
 
 fn get_battery_state(battery: &str) -> (u32, BatteryState) {
+    // Try to get cached battery state first
+    if let Some(cached_state) = battery_monitor::get_cached_battery_state() {
+        return cached_state;
+    }
+
+    // Fallback to direct reading if cache is not available
+    get_battery_state_direct(battery)
+}
+
+fn get_battery_state_direct(battery: &str) -> (u32, BatteryState) {
     let status_path = format!("/sys/class/power_supply/{}/status", battery);
     let status = fs::read_to_string(&status_path)
         .unwrap_or_else(|_| "Unknown".to_string());
@@ -1301,6 +1324,22 @@ fn real_main(drm: &mut DrmBackend) {
     let mut navigation_state = NavigationState::new();
     let mut original_layers = layers.clone(); // Store original layers for reset
 
+    // Start preloading common icons in background
+    icon_cache::preload_common_icons();
+
+    // Start battery monitoring if there's a battery device
+    let _battery_monitor = if let Some(battery_device) = find_battery_device() {
+        Some(battery_monitor::BatteryMonitor::new(battery_device))
+    } else {
+        None
+    };
+
+    // Start system state monitoring
+    let _system_monitor = system_monitor::SystemMonitor::new();
+
+    // Start background icon preloader (after initial setup)
+    icon_cache::start_background_preloader();
+
     let mut input_tb = Libinput::new_with_udev(Interface);
     let mut input_main = Libinput::new_with_udev(Interface);
     input_tb.udev_assign_seat("seat-touchbar").unwrap();
@@ -1440,7 +1479,8 @@ fn real_main(drm: &mut DrmBackend) {
             }
         }
 
-        let current_minute = now.minute();
+        // Use system monitor for time updates (more efficient)
+        let current_minute = system_monitor::get_current_minute();
         if layers[active_layer].displays_time && (current_minute != last_redraw_minute) {
             needs_complete_redraw = true;
             last_redraw_minute = current_minute;
@@ -1452,6 +1492,11 @@ fn real_main(drm: &mut DrmBackend) {
                 }
             }
             last_battery_update_minute = current_minute;
+        }
+
+        // Periodic cache cleanup
+        if system_monitor::should_cleanup_cache() {
+            icon_cache::cleanup_cache();
         }
 
         // Check for Hyprland plugin updates and update button content
