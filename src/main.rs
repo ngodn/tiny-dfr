@@ -571,11 +571,44 @@ impl Button {
                 c.show_text(text).unwrap();
             }
             ButtonImage::TextWithIcon(text, svg) => {
-                let text_extents = c.text_extents(text).unwrap();
                 // Make icon fit button height with some padding, keeping aspect ratio
                 let padding = 4.0;
                 let icon_size = height as f64 - (padding * 2.0);
-                let total_width = icon_size + text_extents.width(); // No extra spacing needed since text already has space
+                let available_text_width = button_width as f64 - icon_size - 8.0; // Reserve some padding
+
+                // Trim text if it's too wide for the button
+                let (display_text, text_extents) = {
+                    let original_extents = c.text_extents(text).unwrap();
+                    if original_extents.width() <= available_text_width {
+                        (text.clone(), original_extents)
+                    } else {
+                        // Trim text to fit with ellipsis
+                        let trimmed = text.clone();
+                        let ellipsis = "...";
+                        let ellipsis_width = c.text_extents(ellipsis).unwrap().width();
+                        let target_width = available_text_width - ellipsis_width;
+
+                        // Binary search to find optimal text length
+                        let mut left = 0;
+                        let mut right = trimmed.chars().count();
+                        while left < right {
+                            let mid = (left + right + 1) / 2;
+                            let test_text: String = trimmed.chars().take(mid).collect();
+                            let test_width = c.text_extents(&test_text).unwrap().width();
+                            if test_width <= target_width {
+                                left = mid;
+                            } else {
+                                right = mid - 1;
+                            }
+                        }
+
+                        let final_text: String = trimmed.chars().take(left).collect::<String>() + ellipsis;
+                        let final_extents = c.text_extents(&final_text).unwrap();
+                        (final_text, final_extents)
+                    }
+                };
+
+                let total_width = icon_size + text_extents.width();
 
                 // Center the combined icon+text in the button
                 let start_x = button_left_edge + (button_width as f64 / 2.0 - total_width / 2.0).round();
@@ -590,7 +623,7 @@ impl Button {
                 let text_x = start_x + icon_size;
                 let text_y = y_shift + (height as f64 / 2.0 + text_extents.height() / 2.0).round();
                 c.move_to(text_x, text_y);
-                c.show_text(text).unwrap();
+                c.show_text(&display_text).unwrap();
             }
             ButtonImage::Svg(svg) => {
                 let x =
@@ -1988,7 +2021,7 @@ fn update_hyprland_button_content(button: &mut (usize, Button), window_info: &hy
                     },
                 } {
                     if let ButtonImage::Svg(icon_handle) = icon {
-                        // Show with app icon and text
+                        // Show with app icon and text - maintain consistent spacing format
                         button.1.image = ButtonImage::TextWithIcon(
                             format!(" {}", window_title),
                             icon_handle
