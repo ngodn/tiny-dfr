@@ -1,0 +1,98 @@
+Expand_Omarchy = [
+    { Text = "Apps", Action = "Command_OmarchyApps", ShowButtonOutlines = true, ButtonOutlinesColor = [
+        0.10196078431372549,
+        0.10588235294117647,
+        0.14901960784313725,
+    ] },
+    { Text = "Trigger", Action = "Command_OmarchyTrigger", ShowButtonOutlines = true, ButtonOutlinesColor = [
+        0.10196078431372549,
+        0.10588235294117647,
+        0.14901960784313725,
+    ] },
+    { Text = "Style", Action = "Command_OmarchyStyle", ShowButtonOutlines = true, ButtonOutlinesColor = [
+        0.10196078431372549,
+        0.10588235294117647,
+        0.14901960784313725,
+    ] },
+    { Text = "Setup", Action = "Command_OmarchySetup", ShowButtonOutlines = true, ButtonOutlinesColor = [
+        0.10196078431372549,
+        0.10588235294117647,
+        0.14901960784313725,
+    ] },
+    { Text = "Install", Action = "Command_OmarchyInstall", ShowButtonOutlines = true, ButtonOutlinesColor = [
+        0.10196078431372549,
+        0.10588235294117647,
+        0.14901960784313725,
+    ] },
+    { Text = "Remove", Action = "Command_OmarchyRemove", ShowButtonOutlines = true, ButtonOutlinesColor = [
+        0.10196078431372549,
+        0.10588235294117647,
+        0.14901960784313725,
+    ] },
+    { Text = "System", Action = "Command_OmarchySystem", ShowButtonOutlines = true, ButtonOutlinesColor = [
+        0.10196078431372549,
+        0.10588235294117647,
+        0.14901960784313725,
+    ] },
+]
+
+Expand_Settings = [
+    { Icon = "brightness_low", Action = "BrightnessDown", ShowButtonOutlines = false },
+    { Icon = "brightness_high", Action = "BrightnessUp", ShowButtonOutlines = false },
+    { Icon = "mic_off", Action = "MicMute", ShowButtonOutlines = false },
+    { Icon = "backlight_low", Action = "IllumDown", ShowButtonOutlines = false },
+    { Icon = "backlight_high", Action = "IllumUp", ShowButtonOutlines = false },
+    { Icon = "fast_rewind", Action = "PreviousSong", ShowButtonOutlines = false },
+    { Icon = "play_pause", Action = "PlayPause", ShowButtonOutlines = false },
+    { Icon = "fast_forward", Action = "NextSong", ShowButtonOutlines = false },
+    { Icon = "volume_off", Action = "Mute", ShowButtonOutlines = false },
+    { Icon = "volume_down", Action = "VolumeDown", ShowButtonOutlines = false },
+    { Icon = "volume_up", Action = "VolumeUp", ShowButtonOutlines = false },
+]
+
+Expand_Trigger = [
+    { Icon = "color_picker", Action = "Command_ColorPicker", ShowButtonOutlines = false },
+    { Icon = "screenshot", Action = "Expand_Screenshot", ShowButtonOutlines = false },
+    { Icon = "screenrecord", Action = "Expand_Screenrecord", ShowButtonOutlines = false },
+]
+
+Expand_Screenshot = [
+    { Text = "Region", Action = "Command_ScreenshotRegion", ShowButtonOutlines = true, ButtonOutlinesColor = [
+        0.10196078431372549,
+        0.10588235294117647,
+        0.14901960784313725,
+    ] },
+    { Text = "Window", Action = "Command_ScreenshotWindow", ShowButtonOutlines = true, ButtonOutlinesColor = [
+        0.10196078431372549,
+        0.10588235294117647,
+        0.14901960784313725,
+    ] },
+    { Text = "Display", Action = "Command_ScreenshotDisplay", ShowButtonOutlines = true, ButtonOutlinesColor = [
+        0.10196078431372549,
+        0.10588235294117647,
+        0.14901960784313725,
+    ] },
+]
+
+Expand_Screenrecord = [
+    { Text = "Region", Action = "Command_ScreenrecordRegion", ShowButtonOutlines = true, ButtonOutlinesColor = [
+        0.10196078431372549,
+        0.10588235294117647,
+        0.14901960784313725,
+    ] },
+    { Text = "Region + Audio", Action = "Command_ScreenrecordRegionAudio", ShowButtonOutlines = true, ButtonOutlinesColor = [
+        0.10196078431372549,
+        0.10588235294117647,
+        0.14901960784313725,
+    ] },
+    { Text = "Display", Action = "Command_ScreenrecordDisplay", ShowButtonOutlines = true, ButtonOutlinesColor = [
+        0.10196078431372549,
+        0.10588235294117647,
+        0.14901960784313725,
+    ] },
+    { Text = "Display + Audio", Action = "Command_ScreenrecordDisplayAudio", ShowButtonOutlines = true, ButtonOutlinesColor = [
+        0.10196078431372549,
+        0.10588235294117647,
+        0.14901960784313725,
+    ] },
+]

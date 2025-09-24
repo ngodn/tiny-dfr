@@ -23,7 +23,6 @@ use nix::{
         signal::{SigSet, Signal},
     },
 };
-use privdrop::PrivDrop;
 use std::{
     cmp::min,
     collections::HashMap,
@@ -41,6 +40,7 @@ mod backlight;
 mod config;
 mod display;
 mod fonts;
+mod hyprland;
 mod keyboard_backlight;
 mod pixel_shift;
 
@@ -57,6 +57,61 @@ const BUTTON_COLOR_ACTIVE: f64 = 0.400;
 const ICON_SIZE: i32 = 48;
 const TIMEOUT_MS: i32 = 10 * 1000;
 
+#[derive(Clone, Debug)]
+struct NavigationState {
+    navigation_stack: Vec<String>,
+    current_expandable: Option<String>,
+    last_interaction_time: std::time::Instant,
+}
+
+impl NavigationState {
+    fn new() -> Self {
+        NavigationState {
+            navigation_stack: Vec::new(),
+            current_expandable: None,
+            last_interaction_time: std::time::Instant::now(),
+        }
+    }
+
+    fn push_expandable(&mut self, expandable_name: String) {
+        if let Some(current) = &self.current_expandable {
+            self.navigation_stack.push(current.clone());
+        }
+        self.current_expandable = Some(expandable_name);
+        self.last_interaction_time = std::time::Instant::now();
+    }
+
+    fn pop_expandable(&mut self) -> bool {
+        if let Some(previous) = self.navigation_stack.pop() {
+            self.current_expandable = Some(previous);
+            self.last_interaction_time = std::time::Instant::now();
+            true
+        } else if self.current_expandable.is_some() {
+            self.current_expandable = None;
+            self.last_interaction_time = std::time::Instant::now();
+            true
+        } else {
+            false
+        }
+    }
+
+    fn reset_to_main(&mut self) {
+        self.navigation_stack.clear();
+        self.current_expandable = None;
+        self.last_interaction_time = std::time::Instant::now();
+    }
+
+    fn update_interaction_time(&mut self) {
+        self.last_interaction_time = std::time::Instant::now();
+    }
+
+    fn should_timeout(&self, timeout_seconds: u32) -> bool {
+        timeout_seconds > 0 &&
+        self.current_expandable.is_some() &&
+        self.last_interaction_time.elapsed().as_secs() >= timeout_seconds as u64
+    }
+}
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum BatteryState {
     NotCharging,
@@ -64,6 +119,7 @@ enum BatteryState {
     Low,
 }
 
+#[derive(Clone)]
 struct BatteryImages {
     plain: Vec<Handle>,
     charging: Vec<Handle>,
@@ -86,14 +142,17 @@ impl BatteryIconMode {
     }
 }
 
+#[derive(Clone)]
 enum ButtonImage {
     Text(String),
     Svg(Handle),
     Bitmap(ImageSurface),
     Time(Vec<ChronoItem<'static>>, Locale),
     Battery(String, BatteryIconMode, BatteryImages),
+    TextWithIcon(String, Handle),
 }
 
+#[derive(Clone)]
 struct Button {
     image: ButtonImage,
     changed: bool,
@@ -246,9 +305,52 @@ fn get_battery_state(battery: &str) -> (u32, BatteryState) {
 impl Button {
     fn with_config(cfg: ButtonConfig) -> Button {
         let mut button = if let Some(text) = cfg.text {
-            Button::new_text(text, cfg.action)
+            if text == "plugin-hyprland" {
+                // Get Hyprland active window text - use "title" as default button title
+                let (window_text, window_class) = match hyprland::get_active_window_info() {
+                    Ok(info) => {
+                        let title = info.get_text_by_button_title("title");
+                        println!("Hyprland plugin: Got window title: '{}', class: '{}'", title, info.class);
+                        (title, info.class.clone())
+                    },
+                    Err(e) => {
+                        println!("Hyprland plugin error: {}", e);
+                        ("Hyprland N/A".to_string(), String::new())
+                    },
+                };
+
+                // For Hyprland buttons, always try to show app icon if available
+                if !window_class.is_empty() {
+                    // Try custom app_icon first, then auto-detect from class
+                    let icon_name = if let Some(app_icon) = &cfg.app_icon {
+                        app_icon.clone()
+                    } else {
+                        format!("app-{}", window_class)
+                    };
+
+                    // Check if the icon exists before trying to create TextWithIcon button
+                    if try_load_image(&icon_name, cfg.theme.as_deref()).is_ok() {
+                        Button::new_text_with_icon(window_text, icon_name, cfg.theme, cfg.action)
+                    } else {
+                        Button::new_text(window_text, cfg.action)
+                    }
+                } else {
+                    Button::new_text(window_text, cfg.action)
+                }
+            } else {
+                Button::new_text(text, cfg.action)
+            }
         } else if let Some(icon) = cfg.icon {
-            Button::new_icon(&icon, cfg.theme, cfg.action)
+            if icon == "plugin-hyprland" {
+                // Get Hyprland active window icon
+                let icon_name = match hyprland::get_active_window_info() {
+                    Ok(info) => info.get_app_icon_name(),
+                    Err(_) => "application-default-icon".to_string(),
+                };
+                Button::new_icon(&icon_name, cfg.theme, cfg.action)
+            } else {
+                Button::new_icon(&icon, cfg.theme, cfg.action)
+            }
         } else if let Some(time) = cfg.time {
             Button::new_time(cfg.action, &time, cfg.locale.as_deref())
         } else if let Some(battery_mode) = cfg.battery {
@@ -271,6 +373,31 @@ impl Button {
             active: false,
             changed: false,
             image: ButtonImage::Text(text),
+            show_outline: None,
+            outline_color: None,
+        }
+    }
+    fn new_text_with_icon(text: String, icon_name: String, theme: Option<impl AsRef<str>>, action: ButtonAction) -> Button {
+        let icon = try_load_image(icon_name, theme).unwrap_or_else(|_| {
+            // Fallback to a default icon if the specific app icon is not found
+            try_load_image("application-default-icon", None::<&str>).unwrap_or_else(|_| {
+                ButtonImage::Text("📱".to_string()) // Fallback emoji
+            })
+        });
+
+        let icon_handle = match icon {
+            ButtonImage::Svg(handle) => handle,
+            _ => {
+                // If not SVG, create a text button instead
+                return Button::new_text(text, action);
+            }
+        };
+
+        Button {
+            action,
+            active: false,
+            changed: false,
+            image: ButtonImage::TextWithIcon(format!(" {}", text), icon_handle), // Add space before text
             show_outline: None,
             outline_color: None,
         }
@@ -368,6 +495,28 @@ impl Button {
                 );
                 c.show_text(text).unwrap();
             }
+            ButtonImage::TextWithIcon(text, svg) => {
+                let text_extents = c.text_extents(text).unwrap();
+                // Make icon fit button height with some padding, keeping aspect ratio
+                let padding = 4.0;
+                let icon_size = height as f64 - (padding * 2.0);
+                let total_width = icon_size + text_extents.width(); // No extra spacing needed since text already has space
+
+                // Center the combined icon+text in the button
+                let start_x = button_left_edge + (button_width as f64 / 2.0 - total_width / 2.0).round();
+
+                // Draw icon
+                let icon_x = start_x;
+                let icon_y = y_shift + padding;
+                svg.render_document(c, &Rectangle::new(icon_x, icon_y, icon_size, icon_size))
+                    .unwrap();
+
+                // Draw text
+                let text_x = start_x + icon_size;
+                let text_y = y_shift + (height as f64 / 2.0 + text_extents.height() / 2.0).round();
+                c.move_to(text_x, text_y);
+                c.show_text(text).unwrap();
+            }
             ButtonImage::Svg(svg) => {
                 let x =
                     button_left_edge + (button_width as f64 / 2.0 - (ICON_SIZE / 2) as f64).round();
@@ -451,32 +600,22 @@ impl Button {
             }
         }
     }
-    fn set_active<F>(&mut self, uinput: &mut UInputHandle<F>, config: &Config, active: bool)
-    where
-        F: AsRawFd,
-    {
-        if self.active != active {
-            self.active = active;
-            self.changed = true;
-
-            handle_button_action(uinput, &self.action, config, active);
-        }
-    }
     fn set_backround_color(&self, c: &Context, color: f64) {
-        if let ButtonImage::Battery(battery, _, _) = &self.image {
-            let (_, state) = get_battery_state(battery);
-            match state {
-                BatteryState::NotCharging => c.set_source_rgb(color, color, color),
-                BatteryState::Charging => c.set_source_rgb(0.0, color, 0.0),
-                BatteryState::Low => c.set_source_rgb(color, 0.0, 0.0),
+        match &self.image {
+            ButtonImage::Battery(battery, _, _) => {
+                let (_, state) = get_battery_state(battery);
+                match state {
+                    BatteryState::NotCharging => c.set_source_rgb(color, color, color),
+                    BatteryState::Charging => c.set_source_rgb(0.0, color, 0.0),
+                    BatteryState::Low => c.set_source_rgb(color, 0.0, 0.0),
+                }
             }
-        } else {
-            c.set_source_rgb(color, color, color);
+            _ => c.set_source_rgb(color, color, color),
         }
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct FunctionLayer {
     displays_time: bool,
     displays_battery: bool,
@@ -743,7 +882,125 @@ where
     );
 }
 
-fn handle_button_action<F>(uinput: &mut UInputHandle<F>, action: &ButtonAction, config: &Config, active: bool)
+fn update_layer_for_navigation(navigation_state: &NavigationState, config: &Config, layers: &mut [FunctionLayer; 2], active_layer: &mut usize, needs_complete_redraw: &mut bool, original_layers: &[FunctionLayer; 2], touches: &mut HashMap<u32, (usize, usize)>) {
+    if let Some(expandable_name) = &navigation_state.current_expandable {
+        if let Some(expandable_buttons) = config.expandables.get(expandable_name) {
+            // Create back button
+            let back_button = ButtonConfig {
+                icon: Some("back".to_string()),
+                text: Some("Back".to_string()),
+                theme: None,
+                time: None,
+                battery: None,
+                locale: None,
+                action: ButtonAction::Command("Back".to_string()),
+                stretch: None,
+                show_button_outlines: Some(config.back_button_show_outlines),
+                button_outlines_color: config.back_button_outline_color.clone(),
+                show_app_icon_alongside_text: None,
+                app_icon: None,
+            };
+
+            // Combine back button with expandable buttons
+            let mut combined_buttons = vec![back_button];
+            combined_buttons.extend_from_slice(expandable_buttons);
+
+            // Replace the current layer with the expandable
+            layers[*active_layer] = FunctionLayer::with_config(combined_buttons);
+            *needs_complete_redraw = true;
+
+            // Clear all active touches to prevent accidental triggering in new layout
+            clear_all_touches(layers, touches);
+        }
+    } else {
+        // Return to original configuration
+        layers[0] = original_layers[0].clone();
+        layers[1] = original_layers[1].clone();
+        *needs_complete_redraw = true;
+
+        // Clear all active touches to prevent accidental triggering in new layout
+        clear_all_touches(layers, touches);
+    }
+}
+
+fn clear_all_touches(layers: &mut [FunctionLayer; 2], touches: &mut HashMap<u32, (usize, usize)>) {
+    // Only clear if there are actually touches to clear
+    if touches.is_empty() {
+        return;
+    }
+
+    // Deactivate only the buttons that are currently active
+    for layer in layers.iter_mut() {
+        for (_, button) in layer.buttons.iter_mut() {
+            if button.active {
+                button.active = false;
+                button.changed = true;
+            }
+        }
+    }
+
+    // Clear the touches map
+    touches.clear();
+}
+
+fn handle_hyprland_expand(hyprland_expand_name: &str, config: &Config, navigation_state: &mut NavigationState, layers: &mut [FunctionLayer; 2], active_layer: &mut usize, needs_complete_redraw: &mut bool, _original_layers: &[FunctionLayer; 2], touches: &mut HashMap<u32, (usize, usize)>) {
+    // Get the active window information
+    let active_window_info = match hyprland::get_active_window_info() {
+        Ok(info) => info,
+        Err(_) => {
+            // If we can't get active window info, ignore the button press
+            return;
+        }
+    };
+
+    // Check if we have a Hyprland expandable configuration for this action
+    if let Some(hyprland_configs) = config.hyprland_expandables.get(hyprland_expand_name) {
+        // Find a matching configuration based on the active window class
+        let matching_config = hyprland_configs.iter().find(|config| {
+            config.class == active_window_info.class
+        });
+
+        if let Some(matched_config) = matching_config {
+            // Create the button title based on configuration
+            let button_title = matched_config.button_title.as_deref().unwrap_or("title");
+            let window_text = active_window_info.get_text_by_button_title(button_title);
+
+            // Create a dynamic back button showing the active window title
+            let mut window_button_config = ButtonConfig {
+                icon: Some("back".to_string()), // Show back arrow icon
+                text: Some(window_text.clone()), // Show window title
+                theme: None,
+                time: None,
+                battery: None,
+                locale: None,
+                action: ButtonAction::Command("Back".to_string()),
+                stretch: None,
+                show_button_outlines: Some(config.back_button_show_outlines),
+                button_outlines_color: config.back_button_outline_color.clone(),
+                show_app_icon_alongside_text: Some(true), // Show icon alongside text
+                app_icon: Some("back".to_string()), // Use back icon
+            };
+
+            // Combine window button with expandable layer keys
+            let mut combined_buttons = vec![window_button_config];
+            combined_buttons.extend_from_slice(&matched_config.layer_keys);
+
+            // Replace the current layer with the expandable
+            layers[*active_layer] = FunctionLayer::with_config(combined_buttons);
+            *needs_complete_redraw = true;
+
+            // Push to navigation state to track this expansion
+            navigation_state.push_expandable(format!("hyprland_{}", hyprland_expand_name));
+
+            // Clear all active touches to prevent accidental triggering in new layout
+            clear_all_touches(layers, touches);
+        }
+        // If no matching configuration found for the current window class, ignore the button press
+    }
+    // If no Hyprland expandable configuration found, ignore the button press
+}
+
+fn handle_button_action<F>(uinput: &mut UInputHandle<F>, action: &ButtonAction, config: &Config, active: bool, navigation_state: &mut NavigationState, layers: &mut [FunctionLayer; 2], active_layer: &mut usize, needs_complete_redraw: &mut bool, original_layers: &[FunctionLayer; 2], touches: &mut HashMap<u32, (usize, usize)>)
 where
     F: AsRawFd,
 {
@@ -751,9 +1008,40 @@ where
         ButtonAction::Key(key) => {
             toggle_key(uinput, *key, active as i32);
         }
+        ButtonAction::KeyCombos(keys) => {
+            if active {
+                // Press all keys in the combination
+                for key in keys {
+                    toggle_key(uinput, *key, 1);
+                }
+            } else {
+                // Release all keys in reverse order
+                for key in keys.iter().rev() {
+                    toggle_key(uinput, *key, 0);
+                }
+            }
+        }
         ButtonAction::Command(command_id) => {
             if active {
-                execute_command(command_id, config);
+                if command_id == "Back" {
+                    // Handle back button
+                    if navigation_state.pop_expandable() {
+                        update_layer_for_navigation(navigation_state, config, layers, active_layer, needs_complete_redraw, original_layers, touches);
+                    }
+                } else {
+                    execute_command(command_id, config);
+                }
+            }
+        }
+        ButtonAction::Expand(expandable_name) => {
+            if active {
+                navigation_state.push_expandable(expandable_name.clone());
+                update_layer_for_navigation(navigation_state, config, layers, active_layer, needs_complete_redraw, original_layers, touches);
+            }
+        }
+        ButtonAction::HyprlandExpand(hyprland_expand_name) => {
+            if active {
+                handle_hyprland_expand(hyprland_expand_name, config, navigation_state, layers, active_layer, needs_complete_redraw, original_layers, touches);
             }
         }
     }
@@ -1010,6 +1298,8 @@ fn real_main(drm: &mut DrmBackend) {
         ImageSurface::create(Format::ARgb32, db_width as i32, db_height as i32).unwrap();
     let mut active_layer = 0;
     let mut needs_complete_redraw = true;
+    let mut navigation_state = NavigationState::new();
+    let mut original_layers = layers.clone(); // Store original layers for reset
 
     let mut input_tb = Libinput::new_with_udev(Interface);
     let mut input_main = Libinput::new_with_udev(Interface);
@@ -1037,8 +1327,52 @@ fn real_main(drm: &mut DrmBackend) {
     uinput.set_evbit(EventKind::Key).unwrap();
     for layer in &layers {
         for button in &layer.buttons {
-            if let ButtonAction::Key(key) = button.1.action {
-                uinput.set_keybit(key).unwrap();
+            match &button.1.action {
+                ButtonAction::Key(key) => {
+                    uinput.set_keybit(*key).unwrap();
+                }
+                ButtonAction::KeyCombos(keys) => {
+                    for key in keys {
+                        uinput.set_keybit(*key).unwrap();
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    // Also register keys from expandables
+    for expandable_buttons in cfg.expandables.values() {
+        for button in expandable_buttons {
+            match &button.action {
+                ButtonAction::Key(key) => {
+                    uinput.set_keybit(*key).unwrap();
+                }
+                ButtonAction::KeyCombos(keys) => {
+                    for key in keys {
+                        uinput.set_keybit(*key).unwrap();
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    // Also register keys from hyprland expandables
+    for hyprland_expandable_configs in cfg.hyprland_expandables.values() {
+        for hyprland_config in hyprland_expandable_configs {
+            for button in &hyprland_config.layer_keys {
+                match &button.action {
+                    ButtonAction::Key(key) => {
+                        uinput.set_keybit(*key).unwrap();
+                    }
+                    ButtonAction::KeyCombos(keys) => {
+                        for key in keys {
+                            uinput.set_keybit(*key).unwrap();
+                        }
+                    }
+                    _ => {}
+                }
             }
         }
     }
@@ -1062,14 +1396,26 @@ fn real_main(drm: &mut DrmBackend) {
     uinput.dev_create().unwrap();
 
     let mut digitizer: Option<InputDevice> = None;
-    let mut touches = HashMap::new();
+    let mut touches: HashMap<u32, (usize, usize)> = HashMap::new();
     loop {
         if cfg_mgr.update_config(&mut cfg, &mut layers, width) {
             active_layer = 0;
             needs_complete_redraw = true;
-            
+            original_layers = layers.clone(); // Update original layers
+            navigation_state.reset_to_main(); // Reset navigation on config update
+
             // Update keyboard backlight step size only (can't recreate manager after privilege drop)
             kbd_backlight.update_brightness_step(cfg.keyboard_brightness_step);
+        }
+
+        // Check for timeout and return to main layer (only if we're actually in an expandable)
+        if navigation_state.current_expandable.is_some() && navigation_state.should_timeout(cfg.expandable_timeout_seconds) {
+            navigation_state.reset_to_main();
+            layers[0] = original_layers[0].clone();
+            layers[1] = original_layers[1].clone();
+            needs_complete_redraw = true;
+            // Clear touches to prevent accidental triggering after timeout
+            clear_all_touches(&mut layers, &mut touches);
         }
 
         let now = Local::now();
@@ -1084,6 +1430,16 @@ fn real_main(drm: &mut DrmBackend) {
             next_timeout_ms = min(next_timeout_ms, pixel_shift_next_timeout_ms);
         }
 
+        // Add expandable timeout to the calculation if we're in an expandable
+        if navigation_state.current_expandable.is_some() && cfg.expandable_timeout_seconds > 0 {
+            let elapsed_ms = navigation_state.last_interaction_time.elapsed().as_millis() as i32;
+            let timeout_ms = (cfg.expandable_timeout_seconds * 1000) as i32;
+            let remaining_ms = timeout_ms - elapsed_ms;
+            if remaining_ms > 0 {
+                next_timeout_ms = min(next_timeout_ms, remaining_ms);
+            }
+        }
+
         let current_minute = now.minute();
         if layers[active_layer].displays_time && (current_minute != last_redraw_minute) {
             needs_complete_redraw = true;
@@ -1096,6 +1452,54 @@ fn real_main(drm: &mut DrmBackend) {
                 }
             }
             last_battery_update_minute = current_minute;
+        }
+
+        // Check for Hyprland plugin updates and update button content
+        if hyprland::check_and_reset_cache_updated() {
+            if let Ok(window_info) = hyprland::get_active_window_info() {
+                for button in &mut layers[active_layer].buttons {
+                    // Check if this is a hyprland plugin button and update its content
+                    match &button.1.action {
+                        config::ButtonAction::HyprlandExpand(expand_name) => {
+                            // This is definitely a hyprland button, always try to show app icon if available
+                            let app_icon_name = window_info.get_app_icon_name();
+                            if let Ok(icon) = try_load_image(&app_icon_name, None::<&str>) {
+                                if let ButtonImage::Svg(icon_handle) = icon {
+                                    // Show with app icon
+                                    button.1.image = ButtonImage::TextWithIcon(
+                                        format!(" {}", window_info.get_text_by_button_title("title")),
+                                        icon_handle
+                                    );
+                                    button.1.changed = true;
+                                } else {
+                                    // Fallback to text only if icon can't be loaded as SVG
+                                    button.1.image = ButtonImage::Text(window_info.get_text_by_button_title("title"));
+                                    button.1.changed = true;
+                                }
+                            } else {
+                                // Fallback to text only if app-{class} icon not found
+                                button.1.image = ButtonImage::Text(window_info.get_text_by_button_title("title"));
+                                button.1.changed = true;
+                            }
+                        }
+                        _ => {
+                            // For other buttons, check if they might be plugin-hyprland text buttons
+                            match &button.1.image {
+                                ButtonImage::Text(text) if text.contains("Alacritty") || text.contains("code") || text.contains("Visual Studio") => {
+                                    button.1.image = ButtonImage::Text(window_info.get_text_by_button_title("title"));
+                                    button.1.changed = true;
+                                }
+                                ButtonImage::TextWithIcon(text, _) if text.contains("Alacritty") || text.contains("code") || text.contains("Visual Studio") => {
+                                    // For non-Hyprland expand buttons, keep as text only
+                                    button.1.image = ButtonImage::Text(window_info.get_text_by_button_title("title"));
+                                    button.1.changed = true;
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
+                }
+            }
         }
 
         if needs_complete_redraw || layers[active_layer].buttons.iter().any(|b| b.1.changed) {
@@ -1182,14 +1586,22 @@ fn real_main(drm: &mut DrmBackend) {
                                 
                                 // Only send key event if we didn't handle it with keyboard backlight
                                 if !handled_by_keyboard_backlight {
-                                    layers[active_layer].buttons[btn]
-                                        .1
-                                        .set_active(&mut uinput, &cfg, true);
+                                    // Extract the button action to avoid borrowing conflict
+                                    let action = layers[active_layer].buttons[btn].1.action.clone();
+                                    let old_active = layers[active_layer].buttons[btn].1.active;
+                                    if old_active != true {
+                                        layers[active_layer].buttons[btn].1.active = true;
+                                        layers[active_layer].buttons[btn].1.changed = true;
+                                        handle_button_action(&mut uinput, &action, &cfg, true, &mut navigation_state, &mut layers, &mut active_layer, &mut needs_complete_redraw, &original_layers, &mut touches);
+                                    }
                                 } else {
                                     // Show visual feedback for keyboard backlight buttons (without key event)
                                     layers[active_layer].buttons[btn].1.active = true;
                                     layers[active_layer].buttons[btn].1.changed = true;
                                 }
+
+                                // Update interaction time for any touch
+                                navigation_state.update_interaction_time();
                             }
                         }
                         TouchEvent::Motion(mtn) => {
@@ -1210,12 +1622,22 @@ fn real_main(drm: &mut DrmBackend) {
                                 matches!(button_action, ButtonAction::Key(Key::IllumUp) | ButtonAction::Key(Key::IllumDown));
                             
                             if !is_kbd_backlight_button {
-                                layers[layer].buttons[btn].1.set_active(&mut uinput, &cfg, hit);
+                                // Extract the button action to avoid borrowing conflict
+                                let action = layers[layer].buttons[btn].1.action.clone();
+                                let old_active = layers[layer].buttons[btn].1.active;
+                                if old_active != hit {
+                                    layers[layer].buttons[btn].1.active = hit;
+                                    layers[layer].buttons[btn].1.changed = true;
+                                    handle_button_action(&mut uinput, &action, &cfg, hit, &mut navigation_state, &mut layers, &mut active_layer, &mut needs_complete_redraw, &original_layers, &mut touches);
+                                }
                             } else {
                                 // Handle visual feedback for keyboard backlight buttons (without key event)
                                 layers[layer].buttons[btn].1.active = hit;
                                 layers[layer].buttons[btn].1.changed = true;
                             }
+
+                            // Update interaction time for motion
+                            navigation_state.update_interaction_time();
                         }
                         TouchEvent::Up(up) => {
                             if !touches.contains_key(&up.seat_slot()) {
@@ -1229,12 +1651,22 @@ fn real_main(drm: &mut DrmBackend) {
                                 matches!(button_action, ButtonAction::Key(Key::IllumUp) | ButtonAction::Key(Key::IllumDown));
 
                             if !is_kbd_backlight_button {
-                                layers[layer].buttons[btn].1.set_active(&mut uinput, &cfg, false);
+                                // Extract the button action to avoid borrowing conflict
+                                let action = layers[layer].buttons[btn].1.action.clone();
+                                let old_active = layers[layer].buttons[btn].1.active;
+                                if old_active != false {
+                                    layers[layer].buttons[btn].1.active = false;
+                                    layers[layer].buttons[btn].1.changed = true;
+                                    handle_button_action(&mut uinput, &action, &cfg, false, &mut navigation_state, &mut layers, &mut active_layer, &mut needs_complete_redraw, &original_layers, &mut touches);
+                                }
                             } else {
                                 // Reset visual state for keyboard backlight buttons
                                 layers[layer].buttons[btn].1.active = false;
                                 layers[layer].buttons[btn].1.changed = true;
                             }
+
+                            // Update interaction time for release
+                            navigation_state.update_interaction_time();
                         }
                         _ => {}
                     }

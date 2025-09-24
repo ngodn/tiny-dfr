@@ -1,7 +1,7 @@
 # commands.toml - Command definitions for tiny-dfr
 # Copy this file to /etc/tiny-dfr/commands.toml and edit to customize your commands
 
-# Example commands - you can define up to Command_99
+# Example commands - you can define infinite commands to be used as action
 Command_1 = "omarchy-menu"
 Command_2 = "uwsm app -- alacritty"
 Command_3 = "omarchy-menu apps"
@@ -11,6 +11,27 @@ Command_6 = "omarchy-launch-about"
 # ...
 Command_99 = "code"
 
+Command_OmarchyMenu = "omarchy-menu"
+Command_OmarchyApps = "omarchy-menu apps"
+Command_OmarchyTrigger = "omarchy-menu trigger"
+Command_OmarchyStyle = "omarchy-menu style"
+Command_OmarchySetup = "omarchy-menu setup"
+Command_OmarchyInstall = "omarchy-menu install"
+Command_OmarchyRemove = "omarchy-menu remove"
+Command_OmarchySystem = "omarchy-menu system"
+Command_Alacritty = "uwsm app -- alacritty"
+
+Command_ColorPicker = "pkill hyprpicker || hyprpicker -a"
+
+Command_ScreenshotRegion = "omarchy-cmd-screenshot"
+Command_ScreenshotWindow = "omarchy-cmd-screenshot window"
+Command_ScreenshotDisplay = "omarchy-cmd-screenshot output"
+
+Command_ScreenrecordRegion = "omarchy-cmd-screenrecord"
+Command_ScreenrecordRegionAudio = "omarchy-cmd-screenrecord region audio"
+Command_ScreenrecordDisplay = "omarchy-cmd-screenrecord output"
+Command_ScreenrecordDisplayAudio = "omarchy-cmd-screenrecord output audio"
+
 # Add more commands as needed:
 # Command_11 = "your-command-here"
-# Command_12 = "another-command --with-args"
+# Command_StringNotANumber = "another-command --with-args"

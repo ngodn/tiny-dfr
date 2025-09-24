@@ -9,6 +9,7 @@ use nix::{
     sys::inotify::{AddWatchFlags, InitFlags, Inotify, InotifyEvent, WatchDescriptor},
 };
 use serde::{Deserialize, Deserializer};
+use serde::de::value;
 use std::{fs::read_to_string, os::fd::AsFd, collections::HashMap};
 
 #[derive(Deserialize, Debug, Clone)]
@@ -30,12 +31,54 @@ impl ButtonColor {
 const USER_CFG_PATH: &str = "/etc/tiny-dfr/config.toml";
 const USER_COMMANDS_PATH: &str = "/etc/tiny-dfr/commands.toml";
 const USER_ENV_PATH: &str = "/etc/tiny-dfr/user-env.toml";
+const USER_EXPANDABLES_PATH: &str = "/etc/tiny-dfr/expandables.toml";
 
-#[derive(Deserialize, Debug, Clone, PartialEq)]
-#[serde(untagged)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum ButtonAction {
     Key(Key),
     Command(String), // Command_1, Command_2, etc.
+    Expand(String),  // Expand_Something
+    HyprlandExpand(String), // Hyprland_Expand_ActiveWindow
+    KeyCombos(Vec<Key>), // KeyCombos_CTRL_SHIFT_I
+}
+
+impl<'de> Deserialize<'de> for ButtonAction {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+
+        // Check for Hyprland expand actions
+        if s.starts_with("Hyprland_Expand_") {
+            return Ok(ButtonAction::HyprlandExpand(s));
+        }
+
+        // Check for key combinations
+        if s.starts_with("KeyCombos_") {
+            let keys = crate::hyprland::parse_key_combos(&s);
+            if !keys.is_empty() {
+                return Ok(ButtonAction::KeyCombos(keys));
+            }
+        }
+
+        // Check if it's an Expand action
+        if s.starts_with("Expand_") {
+            return Ok(ButtonAction::Expand(s));
+        }
+
+        // Try to deserialize as Key using serde
+        let key_result: Result<Key, _> = serde::de::Deserialize::deserialize(
+            value::StringDeserializer::<serde::de::value::Error>::new(s.clone())
+        );
+
+        if let Ok(key) = key_result {
+            return Ok(ButtonAction::Key(key));
+        }
+
+        // Otherwise treat as Command
+        Ok(ButtonAction::Command(s))
+    }
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -63,6 +106,21 @@ pub struct Config {
     pub keyboard_brightness_enabled: bool,
     pub commands: HashMap<String, String>,
     pub user_env: Option<UserEnvironment>,
+    pub back_button_show_outlines: bool,
+    pub back_button_outline_color: Option<ButtonColor>,
+    pub expandable_timeout_seconds: u32,
+    pub expandables: HashMap<String, Vec<ButtonConfig>>,
+    pub hyprland_expandables: HashMap<String, Vec<HyprlandExpandConfig>>,
+}
+
+#[derive(Deserialize, Debug, Clone)]
+#[serde(rename_all = "PascalCase")]
+pub struct HyprlandExpandConfig {
+    pub class: String,
+    pub button_title: Option<String>, // "title", "class", "initialTitle", "initialClass"
+    pub show_app_icon_alongside_text: Option<bool>,
+    pub app_icon: Option<String>,
+    pub layer_keys: Vec<ButtonConfig>,
 }
 
 #[derive(Deserialize)]
@@ -78,9 +136,12 @@ struct ConfigProxy {
     media_layer_keys: Option<Vec<ButtonConfig>>,
     keyboard_brightness_step: Option<u32>,
     keyboard_brightness_enabled: Option<bool>,
+    back_button_show_outlines: Option<bool>,
+    back_button_outline_color: Option<ButtonColor>,
+    expandable_timeout_seconds: Option<u32>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug, Clone)]
 #[serde(rename_all = "PascalCase")]
 pub struct ButtonConfig {
     #[serde(alias = "Svg")]
@@ -94,6 +155,8 @@ pub struct ButtonConfig {
     pub stretch: Option<usize>,
     pub show_button_outlines: Option<bool>,
     pub button_outlines_color: Option<ButtonColor>,
+    pub show_app_icon_alongside_text: Option<bool>,
+    pub app_icon: Option<String>,
 }
 
 fn load_commands() -> HashMap<String, String> {
@@ -123,6 +186,46 @@ fn load_user_environment() -> Option<UserEnvironment> {
         }
     }
     None
+}
+
+fn load_expandables() -> HashMap<String, Vec<ButtonConfig>> {
+    let mut expandables = HashMap::new();
+
+    // Load base expandables from /usr/share/tiny-dfr/expandables.toml
+    if let Ok(content) = read_to_string("/usr/share/tiny-dfr/expandables.toml") {
+        if let Ok(base_expandables) = toml::from_str::<HashMap<String, Vec<ButtonConfig>>>(&content) {
+            expandables.extend(base_expandables);
+        }
+    }
+
+    // Override with user expandables from /etc/tiny-dfr/expandables.toml
+    if let Ok(content) = read_to_string(USER_EXPANDABLES_PATH) {
+        if let Ok(user_expandables) = toml::from_str::<HashMap<String, Vec<ButtonConfig>>>(&content) {
+            expandables.extend(user_expandables);
+        }
+    }
+
+    expandables
+}
+
+fn load_hyprland_expandables() -> HashMap<String, Vec<HyprlandExpandConfig>> {
+    let mut hyprland_expandables = HashMap::new();
+
+    // Load base hyprland expandables from /usr/share/tiny-dfr/hyprland.toml
+    if let Ok(content) = read_to_string("/usr/share/tiny-dfr/hyprland.toml") {
+        if let Ok(base_hyprland_expandables) = toml::from_str::<HashMap<String, Vec<HyprlandExpandConfig>>>(&content) {
+            hyprland_expandables.extend(base_hyprland_expandables);
+        }
+    }
+
+    // Override with user hyprland expandables from /etc/tiny-dfr/hyprland.toml
+    if let Ok(content) = read_to_string("/etc/tiny-dfr/hyprland.toml") {
+        if let Ok(user_hyprland_expandables) = toml::from_str::<HashMap<String, Vec<HyprlandExpandConfig>>>(&content) {
+            hyprland_expandables.extend(user_hyprland_expandables);
+        }
+    }
+
+    hyprland_expandables
 }
 
 fn load_font(name: &str) -> FontFace {
@@ -158,6 +261,9 @@ fn load_config(width: u16) -> (Config, [FunctionLayer; 2]) {
         base.active_brightness = user.active_brightness.or(base.active_brightness);
         base.keyboard_brightness_step = user.keyboard_brightness_step.or(base.keyboard_brightness_step);
         base.keyboard_brightness_enabled = user.keyboard_brightness_enabled.or(base.keyboard_brightness_enabled);
+        base.back_button_show_outlines = user.back_button_show_outlines.or(base.back_button_show_outlines);
+        base.back_button_outline_color = user.back_button_outline_color.or(base.back_button_outline_color);
+        base.expandable_timeout_seconds = user.expandable_timeout_seconds.or(base.expandable_timeout_seconds);
     };
     let mut media_layer_keys = base.media_layer_keys.unwrap();
     let mut primary_layer_keys = base.primary_layer_keys.unwrap();
@@ -176,6 +282,8 @@ fn load_config(width: u16) -> (Config, [FunctionLayer; 2]) {
                     battery: None,
                     show_button_outlines: None,
                     button_outlines_color: None,
+                    show_app_icon_alongside_text: None,
+                    app_icon: None,
                 },
             );
         }
@@ -197,6 +305,11 @@ fn load_config(width: u16) -> (Config, [FunctionLayer; 2]) {
         keyboard_brightness_enabled: base.keyboard_brightness_enabled.unwrap_or(true),
         commands: load_commands(),
         user_env: load_user_environment(),
+        back_button_show_outlines: base.back_button_show_outlines.unwrap_or(false),
+        back_button_outline_color: base.back_button_outline_color,
+        expandable_timeout_seconds: base.expandable_timeout_seconds.unwrap_or(5),
+        expandables: load_expandables(),
+        hyprland_expandables: load_hyprland_expandables(),
     };
     (cfg, layers)
 }
