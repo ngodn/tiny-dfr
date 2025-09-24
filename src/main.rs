@@ -69,6 +69,14 @@ struct NavigationState {
     last_interaction_time: std::time::Instant,
 }
 
+#[derive(Clone, Debug)]
+struct PendingAction {
+    action: ButtonAction,
+    execution_time: std::time::Instant,
+    button_index: usize,
+    layer_index: usize,
+}
+
 impl NavigationState {
     fn new() -> Self {
         NavigationState {
@@ -1080,7 +1088,7 @@ fn handle_hyprland_expand(hyprland_expand_name: &str, config: &Config, navigatio
     // If no Hyprland expandable configuration found, ignore the button press
 }
 
-fn handle_button_action<F>(uinput: &mut UInputHandle<F>, action: &ButtonAction, config: &Config, active: bool, navigation_state: &mut NavigationState, layers: &mut [FunctionLayer; 2], active_layer: &mut usize, needs_complete_redraw: &mut bool, original_layers: &[FunctionLayer; 2], touches: &mut HashMap<u32, (usize, usize)>)
+fn handle_button_action<F>(uinput: &mut UInputHandle<F>, action: &ButtonAction, config: &Config, active: bool, navigation_state: &mut NavigationState, layers: &mut [FunctionLayer; 2], active_layer: &mut usize, needs_complete_redraw: &mut bool, original_layers: &[FunctionLayer; 2], touches: &mut HashMap<u32, (usize, usize)>, pending_actions: &mut Vec<PendingAction>, button_index: Option<usize>)
 where
     F: AsRawFd,
 {
@@ -1103,27 +1111,114 @@ where
         }
         ButtonAction::Command(command_id) => {
             if active {
-                if command_id == "Back" {
-                    // Handle back button
-                    if navigation_state.pop_expandable() {
-                        update_layer_for_navigation(navigation_state, config, layers, active_layer, needs_complete_redraw, original_layers, touches);
-                    }
+                // Add visual feedback delay for Command actions
+                if let Some(btn_idx) = button_index {
+                    pending_actions.push(PendingAction {
+                        action: action.clone(),
+                        execution_time: std::time::Instant::now() + std::time::Duration::from_millis(150),
+                        button_index: btn_idx,
+                        layer_index: *active_layer,
+                    });
                 } else {
-                    execute_command(command_id, config);
+                    // Fallback to immediate execution if no button index provided
+                    if command_id == "Back" {
+                        if navigation_state.pop_expandable() {
+                            update_layer_for_navigation(navigation_state, config, layers, active_layer, needs_complete_redraw, original_layers, touches);
+                        }
+                    } else {
+                        execute_command(command_id, config);
+                    }
                 }
             }
         }
         ButtonAction::Expand(expandable_name) => {
             if active {
-                navigation_state.push_expandable(expandable_name.clone());
-                update_layer_for_navigation(navigation_state, config, layers, active_layer, needs_complete_redraw, original_layers, touches);
+                // Add visual feedback delay for Expand actions
+                if let Some(btn_idx) = button_index {
+                    pending_actions.push(PendingAction {
+                        action: action.clone(),
+                        execution_time: std::time::Instant::now() + std::time::Duration::from_millis(150),
+                        button_index: btn_idx,
+                        layer_index: *active_layer,
+                    });
+                } else {
+                    // Fallback to immediate execution if no button index provided
+                    navigation_state.push_expandable(expandable_name.clone());
+                    update_layer_for_navigation(navigation_state, config, layers, active_layer, needs_complete_redraw, original_layers, touches);
+                }
             }
         }
         ButtonAction::HyprlandExpand(hyprland_expand_name) => {
             if active {
-                handle_hyprland_expand(hyprland_expand_name, config, navigation_state, layers, active_layer, needs_complete_redraw, original_layers, touches);
+                // Add visual feedback delay for HyprlandExpand actions
+                if let Some(btn_idx) = button_index {
+                    pending_actions.push(PendingAction {
+                        action: action.clone(),
+                        execution_time: std::time::Instant::now() + std::time::Duration::from_millis(150),
+                        button_index: btn_idx,
+                        layer_index: *active_layer,
+                    });
+                } else {
+                    // Fallback to immediate execution if no button index provided
+                    handle_hyprland_expand(hyprland_expand_name, config, navigation_state, layers, active_layer, needs_complete_redraw, original_layers, touches);
+                }
             }
         }
+    }
+}
+
+fn execute_pending_actions<F>(
+    pending_actions: &mut Vec<PendingAction>,
+    uinput: &mut UInputHandle<F>,
+    config: &Config,
+    navigation_state: &mut NavigationState,
+    layers: &mut [FunctionLayer; 2],
+    active_layer: &mut usize,
+    needs_complete_redraw: &mut bool,
+    original_layers: &[FunctionLayer; 2],
+    touches: &mut HashMap<u32, (usize, usize)>,
+) where
+    F: AsRawFd,
+{
+    let now = std::time::Instant::now();
+    let mut actions_to_remove = Vec::new();
+
+    for (index, pending_action) in pending_actions.iter().enumerate() {
+        if now >= pending_action.execution_time {
+            // Reset button visual state
+            if pending_action.layer_index < layers.len() && pending_action.button_index < layers[pending_action.layer_index].buttons.len() {
+                layers[pending_action.layer_index].buttons[pending_action.button_index].1.active = false;
+                layers[pending_action.layer_index].buttons[pending_action.button_index].1.changed = true;
+            }
+
+            // Execute the action
+            match &pending_action.action {
+                ButtonAction::Command(command_id) => {
+                    if command_id == "Back" {
+                        if navigation_state.pop_expandable() {
+                            update_layer_for_navigation(navigation_state, config, layers, active_layer, needs_complete_redraw, original_layers, touches);
+                        }
+                    } else {
+                        execute_command(command_id, config);
+                    }
+                }
+                ButtonAction::Expand(expandable_name) => {
+                    navigation_state.push_expandable(expandable_name.clone());
+                    update_layer_for_navigation(navigation_state, config, layers, active_layer, needs_complete_redraw, original_layers, touches);
+                }
+                ButtonAction::HyprlandExpand(hyprland_expand_name) => {
+                    handle_hyprland_expand(hyprland_expand_name, config, navigation_state, layers, active_layer, needs_complete_redraw, original_layers, touches);
+                }
+                _ => {} // Other actions are handled immediately
+            }
+
+            actions_to_remove.push(index);
+        }
+    }
+
+    // Remove executed actions in reverse order to maintain indices
+    for &index in actions_to_remove.iter().rev() {
+        pending_actions.remove(index);
     }
 }
 
@@ -1408,6 +1503,7 @@ fn real_main(drm: &mut DrmBackend) {
 
     let mut digitizer: Option<InputDevice> = None;
     let mut touches: HashMap<u32, (usize, usize)> = HashMap::new();
+    let mut pending_actions: Vec<PendingAction> = Vec::new();
     loop {
         if cfg_mgr.update_config(&mut cfg, &mut layers, width) {
             active_layer = 0;
@@ -1461,6 +1557,32 @@ fn real_main(drm: &mut DrmBackend) {
             let remaining_ms = timeout_ms - elapsed_ms;
             if remaining_ms > 0 {
                 next_timeout_ms = min(next_timeout_ms, remaining_ms);
+            }
+        }
+
+        // Process pending actions (for visual feedback delay)
+        if !pending_actions.is_empty() {
+            execute_pending_actions(
+                &mut pending_actions,
+                &mut uinput,
+                &cfg,
+                &mut navigation_state,
+                &mut layers,
+                &mut active_layer,
+                &mut needs_complete_redraw,
+                &original_layers,
+                &mut touches,
+            );
+        }
+
+        // Calculate next timeout for pending actions
+        if !pending_actions.is_empty() {
+            let now = std::time::Instant::now();
+            for pending_action in &pending_actions {
+                let remaining_ms = pending_action.execution_time.saturating_duration_since(now).as_millis() as i32;
+                if remaining_ms > 0 {
+                    next_timeout_ms = min(next_timeout_ms, remaining_ms);
+                }
             }
         }
 
@@ -1720,7 +1842,7 @@ fn real_main(drm: &mut DrmBackend) {
                                     if old_active != true {
                                         layers[active_layer].buttons[btn].1.active = true;
                                         layers[active_layer].buttons[btn].1.changed = true;
-                                        handle_button_action(&mut uinput, &action, &cfg, true, &mut navigation_state, &mut layers, &mut active_layer, &mut needs_complete_redraw, &original_layers, &mut touches);
+                                        handle_button_action(&mut uinput, &action, &cfg, true, &mut navigation_state, &mut layers, &mut active_layer, &mut needs_complete_redraw, &original_layers, &mut touches, &mut pending_actions, Some(btn));
                                     }
                                 } else {
                                     // Show visual feedback for keyboard backlight buttons (without key event)
@@ -1756,7 +1878,7 @@ fn real_main(drm: &mut DrmBackend) {
                                 if old_active != hit {
                                     layers[layer].buttons[btn].1.active = hit;
                                     layers[layer].buttons[btn].1.changed = true;
-                                    handle_button_action(&mut uinput, &action, &cfg, hit, &mut navigation_state, &mut layers, &mut active_layer, &mut needs_complete_redraw, &original_layers, &mut touches);
+                                    handle_button_action(&mut uinput, &action, &cfg, hit, &mut navigation_state, &mut layers, &mut active_layer, &mut needs_complete_redraw, &original_layers, &mut touches, &mut pending_actions, Some(btn));
                                 }
                             } else {
                                 // Handle visual feedback for keyboard backlight buttons (without key event)
@@ -1785,7 +1907,7 @@ fn real_main(drm: &mut DrmBackend) {
                                 if old_active != false {
                                     layers[layer].buttons[btn].1.active = false;
                                     layers[layer].buttons[btn].1.changed = true;
-                                    handle_button_action(&mut uinput, &action, &cfg, false, &mut navigation_state, &mut layers, &mut active_layer, &mut needs_complete_redraw, &original_layers, &mut touches);
+                                    handle_button_action(&mut uinput, &action, &cfg, false, &mut navigation_state, &mut layers, &mut active_layer, &mut needs_complete_redraw, &original_layers, &mut touches, &mut pending_actions, Some(btn));
                                 }
                             } else {
                                 // Reset visual state for keyboard backlight buttons
