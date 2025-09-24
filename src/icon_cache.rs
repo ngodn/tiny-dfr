@@ -221,6 +221,7 @@ pub fn preload_common_icons() {
         ("back", None::<String>),
         ("settings", None::<String>),
         ("application-default-icon", None::<String>),
+        ("plugin-hyprland", None::<String>),
         ("bolt", None::<String>),
         ("brightness_low", None::<String>),
         ("brightness_high", None::<String>),

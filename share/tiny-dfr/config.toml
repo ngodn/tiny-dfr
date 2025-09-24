@@ -172,7 +172,7 @@ MediaLayerKeys = [
         0.14901960784313725,
     ], ButtonTitle = "title", ShowAppIconAlongsideText = true, Stretch = 8 },
     # Use this if want Icon only instead of text or both
-    # { Icon = "plugin-hyprland", Action = "Hyprland_Expand_ActiveWindow", ShowButtonOutlines = true, ButtonOutlinesColor = [0.10196078431372549, 0.10588235294117647, 0.14901960784313725] , Stretch = 8},
+    # { Icon = "plugin-hyprland-icon", Action = "Hyprland_Expand_ActiveWindow", ShowButtonOutlines = true, ButtonOutlinesColor = [0.10196078431372549, 0.10588235294117647, 0.14901960784313725] , Stretch = 8},
 
     { Icon = "bolt", Action = "Expand_Trigger", ShowButtonOutlines = false, ButtonOutlinesColor = 0.0 },
     { Icon = "settings", Action = "Expand_Settings", ShowButtonOutlines = false, ButtonOutlinesColor = 0.0 },

@@ -365,13 +365,56 @@ impl Button {
                 Button::new_text(text, cfg.action)
             }
         } else if let Some(icon) = cfg.icon {
-            if icon == "plugin-hyprland" {
-                // Get Hyprland active window icon
+            if icon == "plugin-hyprland" || icon == "plugin-hyprland-icon" {
+                // Get Hyprland active window icon with efficient cache-based fallbacks
                 let icon_name = match hyprland::get_active_window_info() {
                     Ok(info) => info.get_app_icon_name(),
                     Err(_) => "application-default-icon".to_string(),
                 };
-                Button::new_icon(&icon_name, cfg.theme, cfg.action)
+
+                // Try cached app icon first
+                let final_icon = if let Some(path) = icon_cache::get_icon_cached(icon_name.clone(), cfg.theme.clone()) {
+                    // Load from cached path
+                    match path.extension().and_then(|s| s.to_str()) {
+                        Some("png") => try_load_png(&path).ok(),
+                        Some("svg") => try_load_svg(path.to_str().unwrap_or("")).ok(),
+                        _ => None,
+                    }
+                } else {
+                    // Start async loading for next time
+                    let _ = icon_cache::load_icon_async(icon_name, cfg.theme.clone());
+                    None
+                }.unwrap_or_else(|| {
+                    // Fallback chain using cached icons (these should be pre-loaded)
+                    icon_cache::get_icon_cached("application-default-icon".to_string(), None)
+                        .and_then(|path| match path.extension().and_then(|s| s.to_str()) {
+                            Some("png") => try_load_png(&path).ok(),
+                            Some("svg") => try_load_svg(path.to_str().unwrap_or("")).ok(),
+                            _ => None,
+                        })
+                        .or_else(|| {
+                            // Try plugin-hyprland.svg (should be pre-loaded)
+                            icon_cache::get_icon_cached("plugin-hyprland".to_string(), None)
+                                .and_then(|path| match path.extension().and_then(|s| s.to_str()) {
+                                    Some("png") => try_load_png(&path).ok(),
+                                    Some("svg") => try_load_svg(path.to_str().unwrap_or("")).ok(),
+                                    _ => None,
+                                })
+                        })
+                        .unwrap_or_else(|| {
+                            // Final fallback: text emoji (no I/O)
+                            ButtonImage::Text("🔗".to_string())
+                        })
+                });
+
+                Button {
+                    action: cfg.action,
+                    image: final_icon,
+                    active: false,
+                    changed: false,
+                    show_outline: None,
+                    outline_color: None,
+                }
             } else {
                 Button::new_icon(&icon, cfg.theme, cfg.action)
             }
@@ -1422,31 +1465,129 @@ fn real_main(drm: &mut DrmBackend) {
                     // Check if this is a hyprland plugin button and update its content
                     match &button.1.action {
                         config::ButtonAction::HyprlandExpand(expand_name) => {
-                            // This is definitely a hyprland button, always try to show app icon if available
-                            let app_icon_name = window_info.get_app_icon_name();
-                            if let Ok(icon) = try_load_image(&app_icon_name, None::<&str>) {
-                                if let ButtonImage::Svg(icon_handle) = icon {
-                                    // Show with app icon
-                                    button.1.image = ButtonImage::TextWithIcon(
-                                        format!(" {}", window_info.get_text_by_button_title("title")),
-                                        icon_handle
-                                    );
-                                    button.1.changed = true;
-                                } else {
-                                    // Fallback to text only if icon can't be loaded as SVG
-                                    button.1.image = ButtonImage::Text(window_info.get_text_by_button_title("title"));
+                            // Check if this is an icon-only button (plugin-hyprland-icon) or text button (plugin-hyprland)
+                            match &button.1.image {
+                                ButtonImage::Svg(_) | ButtonImage::Bitmap(_) => {
+                                    // This is an Icon plugin-hyprland-icon button - keep it as icon only
+                                    let app_icon_name = window_info.get_app_icon_name();
+
+                                    // Use efficient cache-based loading
+                                    let new_icon = if let Some(path) = icon_cache::get_icon_cached(app_icon_name.clone(), None) {
+                                        match path.extension().and_then(|s| s.to_str()) {
+                                            Some("png") => try_load_png(&path).ok(),
+                                            Some("svg") => try_load_svg(path.to_str().unwrap_or("")).ok(),
+                                            _ => None,
+                                        }
+                                    } else {
+                                        // Start async loading for next time
+                                        let _ = icon_cache::load_icon_async(app_icon_name, None);
+                                        None
+                                    }.unwrap_or_else(|| {
+                                        // Use pre-loaded fallbacks
+                                        icon_cache::get_icon_cached("application-default-icon".to_string(), None)
+                                            .and_then(|path| match path.extension().and_then(|s| s.to_str()) {
+                                                Some("png") => try_load_png(&path).ok(),
+                                                Some("svg") => try_load_svg(path.to_str().unwrap_or("")).ok(),
+                                                _ => None,
+                                            })
+                                            .or_else(|| {
+                                                icon_cache::get_icon_cached("plugin-hyprland".to_string(), None)
+                                                    .and_then(|path| match path.extension().and_then(|s| s.to_str()) {
+                                                        Some("png") => try_load_png(&path).ok(),
+                                                        Some("svg") => try_load_svg(path.to_str().unwrap_or("")).ok(),
+                                                        _ => None,
+                                                    })
+                                            })
+                                            .unwrap_or_else(|| ButtonImage::Text("🔗".to_string()))
+                                    });
+
+                                    button.1.image = new_icon;
                                     button.1.changed = true;
                                 }
-                            } else {
-                                // Fallback to text only if app-{class} icon not found
-                                button.1.image = ButtonImage::Text(window_info.get_text_by_button_title("title"));
-                                button.1.changed = true;
+                                _ => {
+                                    // This is a Text plugin-hyprland button - show with app icon and text using cache
+                                    let app_icon_name = window_info.get_app_icon_name();
+                                    let window_title = window_info.get_text_by_button_title("title");
+
+                                    // Use cache-based approach for consistent performance
+                                    if let Some(path) = icon_cache::get_icon_cached(app_icon_name.clone(), None) {
+                                        // Load icon from cached path
+                                        if let Ok(icon) = match path.extension().and_then(|s| s.to_str()) {
+                                            Some("png") => try_load_png(&path),
+                                            Some("svg") => try_load_svg(path.to_str().unwrap_or("")),
+                                            _ => {
+                                                // Start async loading for next time
+                                                let _ = icon_cache::load_icon_async(app_icon_name, None);
+                                                button.1.image = ButtonImage::Text(window_title);
+                                                button.1.changed = true;
+                                                continue;
+                                            },
+                                        } {
+                                            if let ButtonImage::Svg(icon_handle) = icon {
+                                                // Show with app icon and text
+                                                button.1.image = ButtonImage::TextWithIcon(
+                                                    format!(" {}", window_title),
+                                                    icon_handle
+                                                );
+                                                button.1.changed = true;
+                                            } else {
+                                                // Non-SVG icon, fallback to text only
+                                                button.1.image = ButtonImage::Text(window_title);
+                                                button.1.changed = true;
+                                            }
+                                        } else {
+                                            // Failed to load cached icon, fallback to text
+                                            button.1.image = ButtonImage::Text(window_title);
+                                            button.1.changed = true;
+                                        }
+                                    } else {
+                                        // Icon not in cache, start async loading and try fallbacks
+                                        let _ = icon_cache::load_icon_async(app_icon_name, None);
+
+                                        // Try pre-loaded fallback icons for text+icon mode
+                                        if let Some(fallback_path) = icon_cache::get_icon_cached("application-default-icon".to_string(), None) {
+                                            if let Ok(fallback_icon) = match fallback_path.extension().and_then(|s| s.to_str()) {
+                                                Some("png") => try_load_png(&fallback_path),
+                                                Some("svg") => try_load_svg(fallback_path.to_str().unwrap_or("")),
+                                                _ => {
+                                                    button.1.image = ButtonImage::Text(window_title);
+                                                    button.1.changed = true;
+                                                    continue;
+                                                },
+                                            } {
+                                                if let ButtonImage::Svg(fallback_handle) = fallback_icon {
+                                                    // Use fallback icon with text
+                                                    button.1.image = ButtonImage::TextWithIcon(
+                                                        format!(" {}", window_title),
+                                                        fallback_handle
+                                                    );
+                                                    button.1.changed = true;
+                                                } else {
+                                                    // Fallback to text only
+                                                    button.1.image = ButtonImage::Text(window_title);
+                                                    button.1.changed = true;
+                                                }
+                                            } else {
+                                                // Fallback icon failed to load, text only
+                                                button.1.image = ButtonImage::Text(window_title);
+                                                button.1.changed = true;
+                                            }
+                                        } else {
+                                            // No fallback available, text only
+                                            button.1.image = ButtonImage::Text(window_title);
+                                            button.1.changed = true;
+                                        }
+                                    }
+                                }
                             }
                         }
                         _ => {
-                            // For other buttons, check if they might be plugin-hyprland text buttons
+                            // For other buttons, check if they might be plugin-hyprland buttons
+                            // We need to identify Icon plugin-hyprland buttons somehow
+                            // One way is to check if this is a button that shows app-specific icons
                             match &button.1.image {
                                 ButtonImage::Text(text) if text.contains("Alacritty") || text.contains("code") || text.contains("Visual Studio") => {
+                                    // This is a Text plugin-hyprland button
                                     button.1.image = ButtonImage::Text(window_info.get_text_by_button_title("title"));
                                     button.1.changed = true;
                                 }
