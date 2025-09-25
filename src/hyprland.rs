@@ -260,14 +260,22 @@ impl ActiveWindowInfo {
 }
 
 pub fn get_active_window_info() -> Result<ActiveWindowInfo> {
+    // Try to create IPC connection - if it fails, Hyprland isn't ready yet
+    let ipc = match HyprlandIpc::new() {
+        Ok(ipc) => ipc,
+        Err(_) => {
+            // Hyprland not available - return a default "waiting" state
+            return Err(anyhow!("Hyprland not available"));
+        }
+    };
+
     // Start event listener if not already started
     {
         let mut started = EVENT_LISTENER_STARTED.lock().unwrap();
         if !*started {
-            let ipc = HyprlandIpc::new()
-                .map_err(|e| anyhow!("Failed to initialize Hyprland IPC: {}", e))?;
-            ipc.start_event_listener()?;
-            *started = true;
+            if let Ok(()) = ipc.start_event_listener() {
+                *started = true;
+            }
         }
     }
 
@@ -279,8 +287,6 @@ pub fn get_active_window_info() -> Result<ActiveWindowInfo> {
     }
 
     // If no cache, get it directly and update cache
-    let ipc = HyprlandIpc::new()
-        .map_err(|e| anyhow!("Failed to initialize Hyprland IPC: {}", e))?;
     let window = ipc.get_active_window()
         .map_err(|e| anyhow!("Failed to get active window: {}", e))?;
     let window_info = ActiveWindowInfo::from_hyprland_window(window);

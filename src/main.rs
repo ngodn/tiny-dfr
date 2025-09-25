@@ -347,7 +347,7 @@ impl Button {
                     },
                     Err(e) => {
                         println!("Hyprland plugin error: {}", e);
-                        ("Hyprland N/A".to_string(), String::new())
+                        ("Hyprland Starting...".to_string(), String::new())
                     },
                 };
 
@@ -1640,8 +1640,13 @@ fn real_main(drm: &mut DrmBackend) {
         }
 
         // Check for Hyprland plugin updates and update button content
-        if hyprland::check_and_reset_cache_updated() {
-            if let Ok(window_info) = hyprland::get_active_window_info() {
+        // Also periodically retry if Hyprland becomes available
+        let hyprland_cache_updated = hyprland::check_and_reset_cache_updated();
+        let window_info_result = hyprland::get_active_window_info();
+
+        // Update buttons if cache was updated OR if Hyprland connection succeeded (for recovery)
+        if hyprland_cache_updated || window_info_result.is_ok() {
+            if let Ok(window_info) = window_info_result {
                 for button in &mut layers[active_layer].buttons {
                     // Check if this is a hyprland plugin button and update its content
                     match &button.1.action {
