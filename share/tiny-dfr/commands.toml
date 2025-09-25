@@ -32,6 +32,8 @@ Command_ScreenrecordRegionAudio = "omarchy-cmd-screenrecord region audio"
 Command_ScreenrecordDisplay = "omarchy-cmd-screenrecord output"
 Command_ScreenrecordDisplayAudio = "omarchy-cmd-screenrecord output audio"
 
+Command_Clipboard = "walker -m clipboard"
+
 # Add more commands as needed:
 # Command_11 = "your-command-here"
 # Command_StringNotANumber = "another-command --with-args"

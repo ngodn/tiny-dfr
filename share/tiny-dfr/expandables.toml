@@ -54,6 +54,7 @@ Expand_Trigger = [
     { Icon = "color_picker", Action = "Command_ColorPicker", ShowButtonOutlines = false },
     { Icon = "screenshot", Action = "Expand_Screenshot", ShowButtonOutlines = false },
     { Icon = "screenrecord", Action = "Expand_Screenrecord", ShowButtonOutlines = false },
+    { Icon = "clipboard", Action = "Command_Clipboard", ShowButtonOutlines = false}
 ]
 
 Expand_Screenshot = [
