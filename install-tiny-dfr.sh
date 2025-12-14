@@ -6,9 +6,11 @@ set -e
 
 echo "Installing tiny-dfr for T2 MacBook..."
 
-# Check if running on T2 Mac
-if ! grep -q "MacBookPro16,1\|MacBookAir" /sys/class/dmi/id/product_name 2>/dev/null; then
-    echo "Warning: This doesn't appear to be a T2 MacBook"
+# Check if running on T2 Mac (covers MacBookPro15,x through 16,x and MacBookAir8,x through 9,x)
+PRODUCT_NAME=$(cat /sys/class/dmi/id/product_name 2>/dev/null || echo "")
+if ! echo "$PRODUCT_NAME" | grep -qE "MacBookPro1[5-6]|MacBookAir[89]|Macmini8|iMac(Pro)?1"; then
+    echo "Warning: This doesn't appear to be a T2 Mac"
+    echo "Detected: $PRODUCT_NAME"
     read -p "Continue anyway? (y/N): " -n 1 -r
     echo
     if [[ ! $REPLY =~ ^[Yy]$ ]]; then
@@ -51,6 +53,16 @@ sudo cp target/release/tiny-dfr /usr/bin/
 sudo mkdir -p /usr/share/tiny-dfr
 sudo cp share/tiny-dfr/* /usr/share/tiny-dfr/
 sudo cp etc/systemd/system/tiny-dfr.service /etc/systemd/system/
+
+# Install udev rules (critical for device detection)
+echo "Installing udev rules..."
+sudo mkdir -p /etc/udev/rules.d
+sudo cp etc/udev/rules.d/99-touchbar-seat.rules /etc/udev/rules.d/
+sudo cp etc/udev/rules.d/99-touchbar-tiny-dfr.rules /etc/udev/rules.d/
+
+# Reload udev rules
+echo "Reloading udev rules..."
+sudo udevadm control --reload-rules
 
 # Setup systemd service
 sudo systemctl daemon-reload
@@ -115,6 +127,28 @@ EOF
 echo "Setting MediaLayerDefault = true in config..."
 sudo sed -i 's/MediaLayerDefault = false/MediaLayerDefault = true/' /etc/tiny-dfr/config.toml
 
+# Check if this is a T2 Mac and if USB config change is needed BEFORE restarting service
+# (service will fail if USB config hasn't been changed yet)
+if echo "$PRODUCT_NAME" | grep -qE "MacBookPro1[5-6]|MacBookAir[89]|Macmini8|iMac(Pro)?1"; then
+    # Check if USB configuration is still on config 1 (needs reboot to apply udev rules)
+    USB_CONFIG=$(cat /sys/bus/usb/devices/7-6/bConfigurationValue 2>/dev/null || echo "")
+    if [ "$USB_CONFIG" = "1" ]; then
+        echo ""
+        echo "=============================================="
+        echo "IMPORTANT: T2 Mac detected - REBOOT REQUIRED"
+        echo "=============================================="
+        echo "The udev rules need to reconfigure the Touch Bar"
+        echo "USB device at boot time. Please reboot your system:"
+        echo ""
+        echo "    sudo reboot"
+        echo ""
+        echo "After reboot, check status with:"
+        echo "    sudo systemctl status tiny-dfr"
+        echo "=============================================="
+        exit 0
+    fi
+fi
+
 # Restart the service to apply config changes
 echo "Restarting tiny-dfr service..."
 sudo systemctl restart tiny-dfr
@@ -122,7 +156,6 @@ sudo systemctl restart tiny-dfr
 echo ""
 echo "Installation complete!"
 echo "Edit /etc/tiny-dfr/config.toml to customize your Touch Bar"
-echo "Service is now running!"
 echo ""
 echo "To check status: sudo systemctl status tiny-dfr"
 echo "To view logs: sudo journalctl -u tiny-dfr -f"
