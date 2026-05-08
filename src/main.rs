@@ -43,6 +43,7 @@ mod display;
 mod fonts;
 mod hyprland;
 mod icon_cache;
+mod display_backlight;
 mod keyboard_backlight;
 mod pixel_shift;
 mod system_monitor;
@@ -53,6 +54,7 @@ use crate::battery_monitor::BatteryState;
 use backlight::BacklightManager;
 use config::{ButtonConfig, Config, ButtonAction, ButtonColor};
 use display::DrmBackend;
+use display_backlight::DisplayBacklightManager;
 use keyboard_backlight::KeyboardBacklightManager;
 use pixel_shift::{PixelShiftManager, PIXEL_SHIFT_WIDTH_PX};
 
@@ -1396,13 +1398,21 @@ fn real_main(drm: &mut DrmBackend) {
     let mut kbd_backlight = KeyboardBacklightManager::new_with_config(
         cfg.keyboard_brightness_step
     );
-    
+
     // Log keyboard backlight availability
     if kbd_backlight.is_available() {
-        println!("Keyboard backlight control enabled - Max brightness: {}", 
+        println!("Keyboard backlight control enabled - Max brightness: {}",
                  kbd_backlight.max_brightness());
     } else {
         println!("Keyboard backlight control disabled - falling back to key events");
+    }
+
+    // Initialize display backlight (handles BrightnessUp/Down directly)
+    let mut display_backlight = DisplayBacklightManager::new_with_step_percent(
+        cfg.display_brightness_step_percent
+    );
+    if !display_backlight.is_available() {
+        println!("Display backlight control disabled - falling back to key events");
     }
     
     let mut pixel_shift = PixelShiftManager::new();
@@ -1546,6 +1556,7 @@ fn real_main(drm: &mut DrmBackend) {
 
             // Update keyboard backlight step size only (can't recreate manager after privilege drop)
             kbd_backlight.update_brightness_step(cfg.keyboard_brightness_step);
+            display_backlight.update_step_percent(cfg.display_brightness_step_percent);
         }
 
         // Check for timeout and return to main layer (only if we're actually in an expandable)
@@ -1857,23 +1868,53 @@ fn real_main(drm: &mut DrmBackend) {
                                 // Get the button action before borrowing layers mutably
                                 let button_action = &layers[active_layer].buttons[btn].1.action;
                                 
-                                // Handle keyboard backlight actions directly
-                                let handled_by_keyboard_backlight = if cfg.keyboard_brightness_enabled {
+                                // Determine if this button is one we own internally.
+                                // We own it regardless of whether the brightness actually
+                                // changed (e.g. already at floor/ceiling) — otherwise the
+                                // key event would leak to the WM and trigger the system's
+                                // brightness OSD/handler.
+                                let is_kbd_button = cfg.keyboard_brightness_enabled
+                                    && kbd_backlight.is_available()
+                                    && matches!(
+                                        button_action,
+                                        ButtonAction::Key(Key::IllumUp)
+                                            | ButtonAction::Key(Key::IllumDown)
+                                    );
+                                let is_display_button = cfg.display_brightness_enabled
+                                    && display_backlight.is_available()
+                                    && matches!(
+                                        button_action,
+                                        ButtonAction::Key(Key::BrightnessUp)
+                                            | ButtonAction::Key(Key::BrightnessDown)
+                                    );
+
+                                if is_kbd_button {
                                     match button_action {
                                         ButtonAction::Key(Key::IllumUp) => {
-                                            kbd_backlight.increase_brightness()
+                                            kbd_backlight.increase_brightness();
                                         }
                                         ButtonAction::Key(Key::IllumDown) => {
-                                            kbd_backlight.decrease_brightness()
+                                            kbd_backlight.decrease_brightness();
                                         }
-                                        _ => false
+                                        _ => {}
                                     }
-                                } else {
-                                    false
-                                };
-                                
-                                // Only send key event if we didn't handle it with keyboard backlight
-                                if !handled_by_keyboard_backlight {
+                                }
+                                if is_display_button {
+                                    match button_action {
+                                        ButtonAction::Key(Key::BrightnessUp) => {
+                                            display_backlight.increase_brightness();
+                                        }
+                                        ButtonAction::Key(Key::BrightnessDown) => {
+                                            display_backlight.decrease_brightness();
+                                        }
+                                        _ => {}
+                                    }
+                                }
+
+                                let handled_internally = is_kbd_button || is_display_button;
+
+                                // Only send key event if we didn't handle it internally
+                                if !handled_internally {
                                     // Extract the button action to avoid borrowing conflict
                                     let action = layers[active_layer].buttons[btn].1.action.clone();
                                     let old_active = layers[active_layer].buttons[btn].1.active;
@@ -1904,12 +1945,17 @@ fn real_main(drm: &mut DrmBackend) {
                                 .hit(width, height, x, y, Some(btn))
                                 .is_some();
                             
-                            // Check if this is a keyboard backlight button
+                            // Check if this is an internally-handled backlight button
                             let button_action = &layers[layer].buttons[btn].1.action;
-                            let is_kbd_backlight_button = cfg.keyboard_brightness_enabled &&
-                                matches!(button_action, ButtonAction::Key(Key::IllumUp) | ButtonAction::Key(Key::IllumDown));
-                            
-                            if !is_kbd_backlight_button {
+                            let is_kbd_backlight_button = cfg.keyboard_brightness_enabled
+                                && kbd_backlight.is_available()
+                                && matches!(button_action, ButtonAction::Key(Key::IllumUp) | ButtonAction::Key(Key::IllumDown));
+                            let is_display_backlight_button = cfg.display_brightness_enabled
+                                && display_backlight.is_available()
+                                && matches!(button_action, ButtonAction::Key(Key::BrightnessUp) | ButtonAction::Key(Key::BrightnessDown));
+                            let is_internal_backlight_button = is_kbd_backlight_button || is_display_backlight_button;
+
+                            if !is_internal_backlight_button {
                                 // Extract the button action to avoid borrowing conflict
                                 let action = layers[layer].buttons[btn].1.action.clone();
                                 let old_active = layers[layer].buttons[btn].1.active;
@@ -1919,7 +1965,7 @@ fn real_main(drm: &mut DrmBackend) {
                                     handle_button_action(&mut uinput, &action, &cfg, hit, &mut navigation_state, &mut layers, &mut active_layer, &mut needs_complete_redraw, &original_layers, &mut touches, &mut pending_actions, Some(btn));
                                 }
                             } else {
-                                // Handle visual feedback for keyboard backlight buttons (without key event)
+                                // Handle visual feedback for internally-handled backlight buttons (without key event)
                                 layers[layer].buttons[btn].1.active = hit;
                                 layers[layer].buttons[btn].1.changed = true;
                             }
@@ -1933,12 +1979,17 @@ fn real_main(drm: &mut DrmBackend) {
                             }
                             let (layer, btn) = *touches.get(&up.seat_slot()).unwrap();
                             
-                            // Check if this was a keyboard backlight button
+                            // Check if this was an internally-handled backlight button
                             let button_action = &layers[layer].buttons[btn].1.action;
-                            let is_kbd_backlight_button = cfg.keyboard_brightness_enabled &&
-                                matches!(button_action, ButtonAction::Key(Key::IllumUp) | ButtonAction::Key(Key::IllumDown));
+                            let is_kbd_backlight_button = cfg.keyboard_brightness_enabled
+                                && kbd_backlight.is_available()
+                                && matches!(button_action, ButtonAction::Key(Key::IllumUp) | ButtonAction::Key(Key::IllumDown));
+                            let is_display_backlight_button = cfg.display_brightness_enabled
+                                && display_backlight.is_available()
+                                && matches!(button_action, ButtonAction::Key(Key::BrightnessUp) | ButtonAction::Key(Key::BrightnessDown));
+                            let is_internal_backlight_button = is_kbd_backlight_button || is_display_backlight_button;
 
-                            if !is_kbd_backlight_button {
+                            if !is_internal_backlight_button {
                                 // Extract the button action to avoid borrowing conflict
                                 let action = layers[layer].buttons[btn].1.action.clone();
                                 let old_active = layers[layer].buttons[btn].1.active;
@@ -1948,7 +1999,7 @@ fn real_main(drm: &mut DrmBackend) {
                                     handle_button_action(&mut uinput, &action, &cfg, false, &mut navigation_state, &mut layers, &mut active_layer, &mut needs_complete_redraw, &original_layers, &mut touches, &mut pending_actions, Some(btn));
                                 }
                             } else {
-                                // Reset visual state for keyboard backlight buttons
+                                // Reset visual state for internally-handled backlight buttons
                                 layers[layer].buttons[btn].1.active = false;
                                 layers[layer].buttons[btn].1.changed = true;
                             }

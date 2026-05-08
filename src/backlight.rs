@@ -13,8 +13,6 @@ use std::{
     time::Instant,
 };
 
-const MAX_DISPLAY_BRIGHTNESS: u32 = 509;
-const MAX_TOUCH_BAR_BRIGHTNESS: u32 = 255;
 const BRIGHTNESS_DIM_TIMEOUT: i32 = TIMEOUT_MS * 3; // should be a multiple of TIMEOUT_MS
 const BRIGHTNESS_OFF_TIMEOUT: i32 = TIMEOUT_MS * 6; // should be a multiple of TIMEOUT_MS
 const DIMMED_BRIGHTNESS: u32 = 1;
@@ -72,6 +70,7 @@ pub struct BacklightManager {
     lid_state: SwitchState,
     bl_file: File,
     display_bl_path: PathBuf,
+    display_max_bl: u32,
 }
 
 impl BacklightManager {
@@ -82,20 +81,36 @@ impl BacklightManager {
             .write(true)
             .open(bl_path.join("brightness"))
             .unwrap();
+        let max_bl = read_attr(&bl_path, "max_brightness");
+        let display_max_bl = read_attr(&display_bl_path, "max_brightness");
+        println!(
+            "Touch Bar backlight: {} (max={}); Display backlight: {} (max={})",
+            bl_path.display(),
+            max_bl,
+            display_bl_path.display(),
+            display_max_bl
+        );
         BacklightManager {
             bl_file,
             lid_state: SwitchState::Off,
-            max_bl: read_attr(&bl_path, "max_brightness"),
+            max_bl,
             current_bl: read_attr(&bl_path, "brightness"),
             last_active: Instant::now(),
             display_bl_path,
+            display_max_bl,
         }
     }
-    fn display_to_touchbar(display: u32, active_brightness: u32) -> u32 {
-        let normalized = display as f64 / MAX_DISPLAY_BRIGHTNESS as f64;
-        // Add one so that the touch bar does not turn off
-        let adjusted = (normalized.powf(0.5) * active_brightness as f64) as u32 + 1;
-        adjusted.min(MAX_TOUCH_BAR_BRIGHTNESS) // Clamp the value to the maximum allowed brightness
+    fn display_to_touchbar(&self, display: u32, active_brightness: u32) -> u32 {
+        // Normalize display brightness to [0, 1] using the actual sysfs max.
+        let normalized = display as f64 / self.display_max_bl.max(1) as f64;
+        // The user-configured active_brightness is on a 0-255 scale (legacy);
+        // clamp it to whatever the touch bar's kernel driver actually supports
+        // (e.g. 2 for the upstream hid-appletb-bl driver which only has off/dim/on).
+        let cap = active_brightness.min(self.max_bl);
+        // Apply a sqrt curve so the touch bar stays visible at low display brightness.
+        // Add one so that the touch bar does not turn off entirely.
+        let adjusted = (normalized.powf(0.5) * cap as f64) as u32 + 1;
+        adjusted.min(self.max_bl)
     }
     pub fn process_event(&mut self, event: &Event) {
         match event {
@@ -122,12 +137,10 @@ impl BacklightManager {
                 0
             } else if since_last_active < BRIGHTNESS_DIM_TIMEOUT as u64 {
                 if cfg.adaptive_brightness {
-                    BacklightManager::display_to_touchbar(
-                        read_attr(&self.display_bl_path, "brightness"),
-                        cfg.active_brightness,
-                    )
+                    let display_bl = read_attr(&self.display_bl_path, "brightness");
+                    self.display_to_touchbar(display_bl, cfg.active_brightness)
                 } else {
-                    cfg.active_brightness
+                    cfg.active_brightness.min(self.max_bl)
                 }
             } else if since_last_active < BRIGHTNESS_OFF_TIMEOUT as u64 {
                 DIMMED_BRIGHTNESS

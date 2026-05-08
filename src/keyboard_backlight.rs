@@ -10,6 +10,7 @@ const KEYBOARD_BRIGHTNESS_STEP: u32 = 1466;
 
 pub struct KeyboardBacklightManager {
     kbd_bl_file: Option<File>,
+    kbd_bl_path: Option<PathBuf>,
     max_brightness: u32,
     current_brightness: u32,
     brightness_step: u32,
@@ -17,10 +18,10 @@ pub struct KeyboardBacklightManager {
 
 impl KeyboardBacklightManager {
     pub fn new() -> KeyboardBacklightManager {
-        let (kbd_bl_file, max_brightness, current_brightness) = 
+        let (kbd_bl_file, kbd_bl_path, max_brightness, current_brightness) =
             if let Ok(path) = find_keyboard_backlight() {
                 println!("Found keyboard backlight at: {}", path.display());
-                
+
                 // Open the brightness file BEFORE dropping privileges
                 let brightness_path = path.join("brightness");
                 let file = match OpenOptions::new()
@@ -32,20 +33,21 @@ impl KeyboardBacklightManager {
                         None
                     }
                 };
-                
+
                 let max_bl = read_attr(&path, "max_brightness").unwrap_or(255);
                 let current_bl = read_attr(&path, "brightness").unwrap_or(0);
-                
+
                 println!("Keyboard backlight - Max: {}, Current: {}", max_bl, current_bl);
-                
-                (file, max_bl, current_bl)
+
+                (file, Some(path), max_bl, current_bl)
             } else {
                 println!("No keyboard backlight device found - keyboard backlight control disabled");
-                (None, 255, 0)
+                (None, None, 255, 0)
             };
 
         KeyboardBacklightManager {
             kbd_bl_file,
+            kbd_bl_path,
             max_brightness,
             current_brightness,
             brightness_step: KEYBOARD_BRIGHTNESS_STEP,
@@ -62,10 +64,16 @@ impl KeyboardBacklightManager {
         if self.kbd_bl_file.is_none() {
             return false;
         }
-        
-        let new_brightness = (self.current_brightness + self.brightness_step)
+
+        // Re-read from sysfs: external tools (hypridle's brightnessctl save/restore,
+        // omarchy-brightness-keyboard, etc.) may have changed the value.
+        self.refresh_current_brightness();
+
+        let new_brightness = self
+            .current_brightness
+            .saturating_add(self.brightness_step)
             .min(self.max_brightness);
-        
+
         if new_brightness != self.current_brightness {
             if self.set_brightness(new_brightness) {
                 println!("Keyboard backlight increased to: {}/{}", self.current_brightness, self.max_brightness);
@@ -79,9 +87,12 @@ impl KeyboardBacklightManager {
         if self.kbd_bl_file.is_none() {
             return false;
         }
-        
+
+        // Re-read from sysfs (see increase_brightness for rationale).
+        self.refresh_current_brightness();
+
         let new_brightness = self.current_brightness.saturating_sub(self.brightness_step);
-        
+
         if new_brightness != self.current_brightness {
             if self.set_brightness(new_brightness) {
                 println!("Keyboard backlight decreased to: {}/{}", self.current_brightness, self.max_brightness);
@@ -89,6 +100,14 @@ impl KeyboardBacklightManager {
             }
         }
         false
+    }
+
+    fn refresh_current_brightness(&mut self) {
+        if let Some(path) = self.kbd_bl_path.as_ref() {
+            if let Some(actual) = read_attr(path, "brightness") {
+                self.current_brightness = actual;
+            }
+        }
     }
 
     pub fn set_brightness(&mut self, brightness: u32) -> bool {
@@ -184,6 +203,7 @@ mod tests {
     fn test_brightness_clamping() {
         let mut manager = KeyboardBacklightManager {
             kbd_bl_file: None,
+            kbd_bl_path: None,
             max_brightness: 100,
             current_brightness: 50,
             brightness_step: 25,
@@ -203,11 +223,38 @@ mod tests {
     fn test_brightness_percentage() {
         let manager = KeyboardBacklightManager {
             kbd_bl_file: None,
+            kbd_bl_path: None,
             max_brightness: 200,
             current_brightness: 100,
             brightness_step: 25,
         };
 
         assert_eq!(manager.brightness_percentage(), 50.0);
+    }
+
+    #[test]
+    fn test_refresh_picks_up_external_writes() {
+        // Simulate sysfs: a directory with a `brightness` file we mutate externally.
+        let tmp = std::env::temp_dir().join(format!("tiny-dfr-kbd-test-{}", std::process::id()));
+        fs::create_dir_all(&tmp).unwrap();
+        fs::write(tmp.join("brightness"), "5000\n").unwrap();
+
+        let mut manager = KeyboardBacklightManager {
+            kbd_bl_file: None,
+            kbd_bl_path: Some(tmp.clone()),
+            max_brightness: 14660,
+            current_brightness: 14660, // stale: in-memory says max, but sysfs says 5000
+            brightness_step: 1466,
+        };
+
+        manager.refresh_current_brightness();
+        assert_eq!(manager.current_brightness, 5000, "must re-read from sysfs");
+
+        // External tool sets it to 0 (e.g., hypridle on-timeout).
+        fs::write(tmp.join("brightness"), "0\n").unwrap();
+        manager.refresh_current_brightness();
+        assert_eq!(manager.current_brightness, 0);
+
+        fs::remove_dir_all(&tmp).ok();
     }
 }

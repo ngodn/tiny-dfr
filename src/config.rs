@@ -104,6 +104,8 @@ pub struct Config {
     pub active_brightness: u32,
     pub keyboard_brightness_step: u32,
     pub keyboard_brightness_enabled: bool,
+    pub display_brightness_enabled: bool,
+    pub display_brightness_step_percent: u32,
     pub commands: HashMap<String, String>,
     pub user_env: Option<UserEnvironment>,
     pub back_button_show_outlines: bool,
@@ -136,6 +138,8 @@ struct ConfigProxy {
     media_layer_keys: Option<Vec<ButtonConfig>>,
     keyboard_brightness_step: Option<u32>,
     keyboard_brightness_enabled: Option<bool>,
+    display_brightness_enabled: Option<bool>,
+    display_brightness_step_percent: Option<u32>,
     back_button_show_outlines: Option<bool>,
     back_button_outline_color: Option<ButtonColor>,
     expandable_timeout_seconds: Option<u32>,
@@ -261,6 +265,8 @@ fn load_config(width: u16) -> (Config, [FunctionLayer; 2]) {
         base.active_brightness = user.active_brightness.or(base.active_brightness);
         base.keyboard_brightness_step = user.keyboard_brightness_step.or(base.keyboard_brightness_step);
         base.keyboard_brightness_enabled = user.keyboard_brightness_enabled.or(base.keyboard_brightness_enabled);
+        base.display_brightness_enabled = user.display_brightness_enabled.or(base.display_brightness_enabled);
+        base.display_brightness_step_percent = user.display_brightness_step_percent.or(base.display_brightness_step_percent);
         base.back_button_show_outlines = user.back_button_show_outlines.or(base.back_button_show_outlines);
         base.back_button_outline_color = user.back_button_outline_color.or(base.back_button_outline_color);
         base.expandable_timeout_seconds = user.expandable_timeout_seconds.or(base.expandable_timeout_seconds);
@@ -303,6 +309,8 @@ fn load_config(width: u16) -> (Config, [FunctionLayer; 2]) {
         active_brightness: base.active_brightness.unwrap(),
         keyboard_brightness_step: base.keyboard_brightness_step.unwrap_or(32),
         keyboard_brightness_enabled: base.keyboard_brightness_enabled.unwrap_or(true),
+        display_brightness_enabled: base.display_brightness_enabled.unwrap_or(true),
+        display_brightness_step_percent: base.display_brightness_step_percent.unwrap_or(5),
         commands: load_commands(),
         user_env: load_user_environment(),
         back_button_show_outlines: base.back_button_show_outlines.unwrap_or(false),
